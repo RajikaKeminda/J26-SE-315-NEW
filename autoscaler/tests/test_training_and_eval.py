@@ -161,9 +161,13 @@ def test_shipped_results_reproduce_exactly():
         got = evaluate_controller(make, DEMO6, n_episodes=n)
         for k in ("p95_latency", "slo_violation_rate", "mean_cost", "scalarized"):
             assert got[k] == pytest.approx(rows[name][k], rel=1e-9), (name, k)
-    agent = evaluate.load_arm("mo_td3_full")
-    if agent is not None and "mo_td3_full" in rows:
-        got = evaluate_controller(lambda: RLController(agent, S, name="mo_td3_full"), DEMO6, n_episodes=n)
+    seeds = evaluate.available_seeds("mo_td3_full")
+    if seeds and "mo_td3_full" in rows:               # the headline row is the MEAN over training seeds
+        runs = []
+        for sd in seeds:
+            agent = evaluate.load_arm("mo_td3_full", sd)
+            runs.append(evaluate_controller(lambda a=agent: RLController(a, S, name="mo_td3_full"), DEMO6, n_episodes=n))
+        got = evaluate.average_runs(runs)
         for k in ("p95_latency", "slo_violation_rate", "mean_cost", "scalarized"):
             assert got[k] == pytest.approx(rows["mo_td3_full"][k], rel=1e-6), k
 
@@ -177,5 +181,42 @@ def test_shipped_pareto_front_is_internally_consistent():
     flags = pareto.pareto_front(pts)
     assert flags == [p["pareto_optimal"] for p in pts]
     budget = config.BUDGET_PER_SERVICE * 6
-    assert blob["families"]["mo_td3"]["hypervolume"] == pytest.approx(
+    fam = blob["families"]
+    rep = str(fam["mo_td3"]["representative_seed"])
+    assert fam["hpa"]["hypervolume"] == pytest.approx(
+        pareto.hypervolume_2d([p for p in pts if p["family"] == "hpa"], budget))
+    assert blob["all_seeds"][rep]["hypervolume"] == pytest.approx(
         pareto.hypervolume_2d([p for p in pts if p["family"] == "mo_td3"], budget))
+    hvs = [v["hypervolume"] for v in blob["all_seeds"].values()]
+    assert fam["mo_td3"]["hypervolume"] == pytest.approx(sum(hvs) / len(hvs))
+    sorted_hv = sorted(hvs)
+    assert blob["all_seeds"][rep]["hypervolume"] == pytest.approx(sorted_hv[len(sorted_hv) // 2]), "median seed, not best"
+
+
+def test_average_runs_is_a_plain_mean_and_keeps_the_pattern_breakdown():
+    a = evaluate_controller(lambda: RuleController("static", S), DEMO6, n_episodes=4)
+    b = evaluate_controller(lambda: RuleController("hpa", S), DEMO6, n_episodes=4)
+    m = evaluate.average_runs([a, b])
+    assert m["p95_latency"] == pytest.approx((a["p95_latency"] + b["p95_latency"]) / 2)
+    assert m["by_pattern"]["burst"]["scalarized"] == pytest.approx(
+        (a["by_pattern"]["burst"]["scalarized"] + b["by_pattern"]["burst"]["scalarized"]) / 2)
+    assert m["n_seeds"] == 2 and m["n_episodes"] == 4
+    assert evaluate.average_runs([a]) is a
+
+
+def test_heldout_topologies_are_deterministic_valid_and_disjoint_from_training():
+    from src.simulation.simulator import random_topology
+    from src.topologies import validate
+    a, b = evaluate.heldout_topologies(6), evaluate.heldout_topologies(6)
+    assert [t.call_graph for t in a] == [t.call_graph for t in b]
+    for t in a:
+        validate(t)
+    train_like = [random_topology(np.random.default_rng(s)) for s in range(200)]      # trainer's per-episode seeds
+    assert all(t.call_graph != h.call_graph or t.work_ms != h.work_ms for t in train_like for h in a)
+
+
+def test_evaluate_heldout_returns_every_controller():
+    out = evaluate.evaluate_heldout({"cpu": 0.5, "target": 0.5}, n_topologies=2, episodes_per_topology=4,
+                                    log=lambda *a: None)
+    assert {"static", "threshold", "hpa", "hpa_tuned", "vpa"} <= set(out)
+    assert out["hpa_tuned"]["scalarized"] < out["static"]["scalarized"]

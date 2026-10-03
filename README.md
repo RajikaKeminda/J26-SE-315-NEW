@@ -1,306 +1,376 @@
-# Topology-Aware Multi-Objective DRL Autoscaler — v2
+# Topology-Aware Multi-Objective DRL for Adaptive Kubernetes Microservice Orchestration
 
-**Project J26-SE-315**
+**Project J26-SE-315 · IT4010 Research Project · SLIIT**
 
-A Kubernetes autoscaler that reads the *service dependency graph* and the
-*live latency-pressure graph*, then uses a topology-agnostic reinforcement
-learning policy to scale services — balancing SLO compliance, infrastructure
-cost, and load distribution.
+A Kubernetes autoscaler that reads the *service dependency graph* and the *live latency graph*
+of a microservice application and, **per service**, decides how many pods to run *and* how much
+CPU and memory each pod gets. It is a **Multi-Objective Twin-Delayed DDPG (MO-TD3)** agent with a
+**hybrid action space** (replica delta −3…+3, continuous CPU and memory), a **2-layer GCN** encoder
+(128 hidden units, 64-d embedding) and a **preference-conditioned** policy, trained on a simulator
+that is *fitted to measurements from a real cluster* and validated back against that cluster.
 
-This version supersedes the earlier POC and real-cluster build. What changed
-and why is documented in [What's new in v2](#whats-new-in-v2).
+This repository implements the four sub-components of the Topic Assessment Form
+(environment modelling → topology feature extraction → multi-objective DRL agent → reward
+engineering & evaluation). [`docs/TAF_TRACEABILITY.md`](docs/TAF_TRACEABILITY.md) maps every
+requirement of the form to code, tests and status.
+
+```
+ Prometheus ─┐                      ┌── SDG (call frequency)  ─► GCN ─┐
+ Jaeger ─────┼─► state builder ─────┤                                 ├─► 64-d embedding + critical path
+ K8s API ────┘   (18 features/svc)  └── EHG (latency p95/edge) ─► GCN ─┘            │
+      ▲                                                                              ▼
+      │   safety guard (bounds · memory floor · cooldowns · budget · breaker) ◄── MO-TD3 actor (shared per service,
+      │                                                                          conditioned on preference w)
+      └── scale / resize the Deployments ◄── per service: Δreplicas ∈ {−3..+3}, CPU, memory
+                         reward vector  (SLO, cost, balance)  ─►  twin critics, one Q per objective
+```
 
 ---
 
 ## Results
 
-Every arm evaluated on **identical topologies and identical traffic**
-(matched seeds, 20 episodes across burst / diurnal / ramp-up / normal
-patterns), so the *evaluation* is controlled. Note that each RL arm is a
-**single training run** (see limitation 5 on seed sensitivity).
-`tests/test_models_and_eval.py` re-runs this evaluation and asserts it still
-reproduces `results/ablation_results.json` exactly.
+Everything in this section is **generated from the committed result files** by
+`python -m src.evaluation.report` (CI fails if the README drifts from the data). Lower is better
+everywhere. *score* is the preference-weighted penalty the agent itself minimises.
 
-| arm | p50 ms | p95 ms | p99 ms | SLO violations | cost (cores) | composite |
-|---|---|---|---|---|---|---|
-| static (no scaling) | 171.5 | 583.5 | 597.5 | 40.5% | 1.20 | 1.583 |
-| **hpa** (industry baseline) | 58.6 | 143.2 | 209.3 | 2.8% | 1.58 | **0.181** |
-| rl_no_topology | 101.8 | 310.8 | 411.4 | 22.6% | 1.63 | 0.723 |
-| rl_sdg_only | 69.3 | 248.2 | 393.5 | 18.1% | 2.21 | 0.581 |
-| **rl_full** (dual-graph) | **49.3** | **73.2** | **75.2** | **0.0%** | 4.54 | 0.520 |
-| rl_single_obj | 49.3 | 73.2 | 75.2 | 0.0% | 4.57 | 0.524 |
-| rl_hpa_init *(experimental, see limitation 5)* | 73.6 | 196.5 | 237.7 | 16.2% | 1.68 | 0.347 |
+### Controller comparison and ablation (simulator, calibrated on a real cluster)
 
-Lower is better everywhere. `composite` = the same weighted latency+cost
-penalty used in training, so arms are comparable on one number.
+<!-- BEGIN:results -->
+24 matched-seed episodes (burst / diurnal / ramp-up / normal), default preference (SLO, cost, balance) = (0.5, 0.35, 0.15). Lower is better everywhere; best per column in bold.
+The tuned HPA is the best (CPU size, utilisation target) found on a held-out seed range: **0.5 cores, 50% target**.
 
-### What this shows
+**6-service application (the one deployed on the cluster and calibrated against it):**
 
-**Each topology component earns its keep.** The ablation gradient is clean:
+| controller | p95 ms | SLO violations | cost | adapt s | score |
+|---|---|---|---|---|---|
+| static (no scaling) | 2320 | 51.0% | 3.19 | 150 | 0.398 |
+| threshold rule (80 % / 30 %) | 611 | 88.0% | 2.33 | 141 | 0.407 |
+| HPA (default 60 % target, 0.25-core pods) | 420 | 81.1% | 2.78 | 134 | 0.351 |
+| **HPA, tuned** (CPU size × target, held-out grid) | 199 | 4.7% | 3.69 | 16 | 0.230 |
+| VPA (right-sizing only) | 16845 | 94.0% | **1.49** | 205 | 0.559 |
+| **MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL) | 168 | 2.9% | 3.57 | 9 | **0.219** |
+| MO-TD3, SDG branch only | 185 | 6.1% | 4.14 | 20 | 0.259 |
+| MO-TD3, no topology (no GCN) | 217 | 16.7% | 3.92 | 48 | 0.276 |
+| MO-TD3, single objective (latency only) | 121 | **0.0%** | 5.71 | **0** | 0.334 |
+| MO-TD3, replicas only (no CPU/mem actions) | 226 | 16.5% | 4.38 | 65 | 0.296 |
+| MO-TD3, categorical replica head (straight-through) | 133 | 0.9% | 4.36 | 3 | 0.259 |
+| MO-TD3 full **+ HPA demonstrations** (TD3+BC) | 191 | 8.7% | 3.95 | 27 | 0.252 |
+|   + demos, SDG branch only | 212 | 16.8% | 3.40 | 45 | 0.235 |
+|   + demos, no topology | 179 | 5.2% | 3.79 | 13 | 0.238 |
+|   + demos, single objective | **119** | **0.0%** | 5.82 | **0** | 0.343 |
+|   + demos, replicas only | 238 | 21.0% | 3.81 | 46 | 0.267 |
+|   + demos, categorical head | 156 | 2.8% | 3.93 | 8 | 0.238 |
 
-```
-no topology awareness   →  310.8ms p95,  22.6% violations
-+ SDG (structure only)  →  248.2ms p95,  18.1% violations
-+ EHG (latency graph)   →   73.2ms p95,   0.0% violations
-```
+Learned arms with several training seeds are shown as the **mean over seeds** (**MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL): 3, MO-TD3, SDG branch only: 2, MO-TD3, no topology (no GCN): 3, MO-TD3 full **+ HPA demonstrations** (TD3+BC): 3,   + demos, SDG branch only: 2,   + demos, no topology: 3).
 
-Removing the EHG branch alone costs 175ms of p95 latency and 18 percentage
-points of SLO compliance. That is direct evidence for the core research
-claim — topology awareness, and specifically *dynamic* topology awareness,
-materially improves scaling decisions.
+**Across training seeds** (mean ± std; one RL run is an anecdote):
 
-**Against HPA:** the full system cuts p95 latency by 49% (143.2 → 73.2ms)
-and eliminates SLO violations entirely (2.8% → 0%).
+| arm | seeds | p95 ms | SLO violations | cost | score |
+|---|---|---|---|---|---|
+| **MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL) | 3 | 168 ± 11 | 2.9% ± 0.7% | 3.57 ± 0.42 | 0.219 ± 0.026 |
+| MO-TD3, SDG branch only | 2 | 185 ± 55 | 6.1% ± 4.5% | 4.14 ± 0.61 | 0.259 ± 0.025 |
+| MO-TD3, no topology (no GCN) | 3 | 217 ± 95 | 16.7% ± 21.1% | 3.92 ± 0.41 | 0.276 ± 0.045 |
+| MO-TD3 full **+ HPA demonstrations** (TD3+BC) | 3 | 191 ± 16 | 8.7% ± 2.4% | 3.95 ± 0.42 | 0.252 ± 0.019 |
+|   + demos, SDG branch only | 2 | 212 ± 21 | 16.8% ± 8.9% | 3.40 ± 0.01 | 0.235 ± 0.017 |
+|   + demos, no topology | 3 | 179 ± 16 | 5.2% ± 1.2% | 3.79 ± 0.11 | 0.238 ± 0.004 |
 
-### Honest limitations
+**14-service application with Train-Ticket's call structure - never seen in training (larger and deeper than any training topology):**
 
-These belong in your write-up as findings, not omissions:
+| controller | p95 ms | SLO violations | cost | adapt s | score |
+|---|---|---|---|---|---|
+| static (no scaling) | 7357 | 90.1% | 7.45 | 190 | 0.501 |
+| threshold rule (80 % / 30 %) | 1034 | 85.9% | 5.78 | 138 | 0.426 |
+| HPA (default 60 % target, 0.25-core pods) | 673 | 82.6% | 6.69 | 135 | 0.359 |
+| **HPA, tuned** (CPU size × target, held-out grid) | 277 | 1.7% | 9.22 | 4 | 0.245 |
+| VPA (right-sizing only) | 33260 | 96.5% | **3.53** | 205 | 0.584 |
+| **MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL) | 280 | 6.3% | 8.56 | 16 | **0.238** |
+| MO-TD3, SDG branch only | 305 | 10.7% | 10.06 | 22 | 0.296 |
+| MO-TD3, no topology (no GCN) | 352 | 14.0% | 10.30 | 46 | 0.296 |
+| MO-TD3, single objective (latency only) | **172** | **0.5%** | 13.60 | **0** | 0.343 |
+| MO-TD3, replicas only (no CPU/mem actions) | 352 | 21.5% | 10.45 | 72 | 0.308 |
+| MO-TD3, categorical replica head (straight-through) | 435 | 5.1% | 10.39 | 18 | 0.291 |
+| MO-TD3 full **+ HPA demonstrations** (TD3+BC) | 369 | 7.5% | 9.78 | 16 | 0.273 |
+|   + demos, SDG branch only | 415 | 24.9% | 8.00 | 67 | 0.262 |
+|   + demos, no topology | 359 | 12.1% | 9.20 | 24 | 0.270 |
+|   + demos, single objective | 172 | 1.5% | 13.47 | 5 | 0.346 |
+|   + demos, replicas only | 356 | 25.7% | 9.76 | 88 | 0.304 |
+|   + demos, categorical head | 296 | 5.5% | 9.35 | 16 | 0.259 |
 
-1. **The full system costs 2.9× more than HPA** (4.54 vs 1.58 cores). On the
-   cost-weighted composite metric, **HPA still wins** (0.181 vs 0.520). The
-   RL agent buys its latency advantage with over-provisioning. Whether that
-   trade is worth it depends entirely on how you price an SLO breach against
-   a CPU core — which is exactly the trade-off a multi-objective formulation
-   is supposed to make explicit, and it does.
+Learned arms with several training seeds are shown as the **mean over seeds** (**MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL): 3, MO-TD3, SDG branch only: 2, MO-TD3, no topology (no GCN): 3, MO-TD3 full **+ HPA demonstrations** (TD3+BC): 3,   + demos, SDG branch only: 2,   + demos, no topology: 3).
 
-2. **The reward weights drive the outcome, strongly.** At `W_COST = 0.3` the
-   agent learned that maxing out replicas was optimal, and every RL arm
-   collapsed to the same degenerate policy. Raising it to `0.55` produced the
-   differentiated behaviour above. Both result sets are kept
-   (`results/ablation_lowcost_w030.json` vs `results/ablation_results.json`)
-   because the sensitivity is itself a result worth reporting.
+**16 held-out random topologies** (same generator as training, disjoint seeds, 4-12 services, tiers 2-5, shared callees):
 
-3. **`rl_single_obj` matches `rl_full` here.** With a latency-only reward the
-   agent has no reason not to over-provision, and in this workload that
-   happens to produce the same policy as the cost-aware arm at these weights.
-   This ablation would separate more clearly under tighter cost pressure or a
-   capacity-constrained cluster.
+| controller | p95 ms | SLO violations | cost | adapt s | score |
+|---|---|---|---|---|---|
+| static (no scaling) | 6028 | 91.9% | 4.43 | 193 | 0.594 |
+| threshold rule (80 % / 30 %) | 1007 | 93.7% | 3.36 | 175 | 0.501 |
+| HPA (default 60 % target, 0.25-core pods) | 681 | 90.2% | 3.82 | 163 | 0.461 |
+| **HPA, tuned** (CPU size × target, held-out grid) | 222 | 19.0% | 5.44 | 54 | 0.266 |
+| VPA (right-sizing only) | 18170 | 98.3% | **2.18** | 204 | 0.590 |
+| **MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL) | 219 | 8.3% | 5.36 | 21 | **0.250** |
+| MO-TD3, SDG branch only | 198 | 8.4% | 6.44 | 22 | 0.292 |
+| MO-TD3, no topology (no GCN) | 262 | 21.9% | 5.99 | 57 | 0.312 |
+| MO-TD3, single objective (latency only) | **164** | 7.7% | 7.74 | 19 | 0.343 |
+| MO-TD3, replicas only (no CPU/mem actions) | 477 | 57.2% | 5.65 | 148 | 0.423 |
+| MO-TD3, categorical replica head (straight-through) | 492 | 12.7% | 6.38 | 34 | 0.318 |
+| MO-TD3 full **+ HPA demonstrations** (TD3+BC) | 235 | 19.3% | 5.67 | 49 | 0.285 |
+|   + demos, SDG branch only | 239 | 19.4% | 5.41 | 46 | 0.273 |
+|   + demos, no topology | 214 | 12.1% | 5.76 | 30 | 0.274 |
+|   + demos, single objective | 244 | 10.0% | 7.90 | 36 | 0.369 |
+|   + demos, replicas only | 497 | 59.6% | 5.31 | 151 | 0.418 |
+|   + demos, categorical head | 195 | **5.5%** | 6.12 | **13** | 0.272 |
 
-4. **All numbers come from the simulator, not a real cluster.** The
-   simulator was calibrated against measurements from the deployed services,
-   but the gap is real: running the service app natively and load-testing a
-   single replica (`traffic-generator/calibrate.py`) gave a saturation
-   throughput of roughly **90–130 req/s per replica**, whereas the simulator
-   assumes `MAX_CONCURRENCY_PER_REPLICA × 1000/WORK_MS` = **267 req/s**. The
-   service is CPU-bound Python behind the GIL, so its four worker threads do
-   not give four-fold throughput. (That measurement ran on a shared 2-core
-   machine, so treat it as an order of magnitude, not a constant — run
-   `bash scripts/13_calibrate.sh` on your own cluster.) The capacity is now an
-   env-var (`MAX_CONCURRENCY_PER_REPLICA`) so the live engine's utilisation —
-   and a re-calibrated simulator — can use the measured value. **The
-   comparison has still not been run on a real cluster.**
+Learned arms with several training seeds are shown as the **mean over seeds** (static (no scaling): 16, threshold rule (80 % / 30 %): 16, HPA (default 60 % target, 0.25-core pods): 16, **HPA, tuned** (CPU size × target, held-out grid): 16, VPA (right-sizing only): 16, **MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL): 3, MO-TD3, SDG branch only: 2, MO-TD3, no topology (no GCN): 3, MO-TD3, single objective (latency only): 16, MO-TD3, replicas only (no CPU/mem actions): 16, MO-TD3, categorical replica head (straight-through): 16, MO-TD3 full **+ HPA demonstrations** (TD3+BC): 3,   + demos, SDG branch only: 2,   + demos, no topology: 3,   + demos, single objective: 16,   + demos, replicas only: 16,   + demos, categorical head: 16).
+<!-- END:results -->
 
-5. **PPO from scratch is unreliable on this task; results depend on the
-   seed.** Re-training `rl_full` with a different random seed (150 PPO
-   iterations, same weights — an ad hoc check, not a committed result) gave
-   p95 73.2 ms / 4.56 cores for seed 0 but p95 127.6 ms / 2.40 cores / 2.7%
-   violations for seed 1: a very different point on the trade-off. A
-   `W_COST` sweep (`scripts/12_run_pareto.sh`, `results/pareto_results.json`)
-   shows the from-scratch agent ending at 3.5–4.6 cores for every cost weight
-   from 0.05 to 1.5, versus HPA's 1.6:
+### One network, the whole trade-off curve (Pareto analysis)
 
-   | point | p95 ms | cost (cores) | SLO viol | Pareto-optimal |
-   |---|---|---|---|---|
-   | static | 583.5 | 1.20 | 40.5% | yes |
-   | hpa | 143.2 | 1.58 | 2.8% | yes |
-   | rl_full @ W_COST=0.9 | 75.5 | 3.48 | 0.6% | yes |
-   | rl_full @ W_COST=1.5 | 74.1 | 3.56 | 0.4% | yes |
-   | rl_full @ W_COST=0.3 | 73.2 | 4.32 | 0.0% | yes |
-   | rl_full @ W_COST=0.55 (shipped) | 73.2 | 4.54 | 0.0% | no |
-   | rl_full @ W_COST=0.05 / 0.15 | 73.2 | 4.57 | 0.0% | no |
+<!-- BEGIN:pareto -->
+One MO-TD3 network evaluated at 15 preferences vs. 15 HPA configurations (CPU size × target), plus static / VPA / threshold. Non-dominated points over all controllers on (SLO-violation rate, p95, cost):
 
-   The agent behaves as "scale everything to the maximum" (visible in the
-   dashboard demo within seconds). `rl_hpa_init` is an attempt at a fix:
-   behaviour-clone HPA first (`src/rl_agent/imitation.py`), then fine-tune with
-   PPO. It lands at 1.68 cores — close to HPA's cost, and a better composite
-   (0.347) than every from-scratch arm — but with 16% SLO violations, so it
-   does **not** beat HPA either. It is shipped as an experimental arm, not as
-   the headline. Credible next steps: per-service credit assignment, a
-   multi-seed study with confidence intervals, a longer imitation/fine-tune
-   schedule.
+| point | p95 ms | SLO violations | cost | Pareto-optimal |
+|---|---|---|---|---|
+| vpa | 16801 | 94.1% | 1.49 | yes |
+| threshold | 585 | 88.3% | 2.32 | yes |
+| hpa(cpu=0.25,target=0.7) | 545 | 88.6% | 2.41 | yes |
+| hpa(cpu=0.25,target=0.6) | 409 | 81.7% | 2.76 | yes |
+| mo_td3_full@w=(0.00,1.00,0.00) | 201 | 7.0% | 2.90 | yes |
+| mo_td3_full@w=(0.00,0.75,0.25) | 189 | 5.6% | 3.04 | yes |
+| mo_td3_full@w=(0.25,0.75,0.00) | 179 | 5.2% | 3.15 | yes |
+| mo_td3_full@w=(0.00,0.50,0.50) | 175 | 6.2% | 3.20 | yes |
+| mo_td3_full@w=(0.25,0.50,0.25) | 168 | 4.4% | 3.27 | yes |
+| mo_td3_full@w=(0.50,0.50,0.00) | 165 | 3.1% | 3.29 | yes |
+| mo_td3_full@w=(0.00,0.25,0.75) | 164 | 4.2% | 3.37 | yes |
+| mo_td3_full@w=(0.25,0.25,0.50) | 162 | 3.6% | 3.40 | yes |
+| mo_td3_full@w=(0.50,0.25,0.25) | 161 | 3.6% | 3.42 | yes |
+| mo_td3_full@w=(0.75,0.25,0.00) | 159 | 2.3% | 3.43 | yes |
+| mo_td3_full@w=(0.00,0.00,1.00) | 143 | 1.6% | 3.99 | yes |
+| mo_td3_full@w=(0.25,0.00,0.75) | 138 | 0.5% | 4.27 | yes |
+| mo_td3_full@w=(0.50,0.00,0.50) | 137 | 2.0% | 4.38 | yes |
+| mo_td3_full@w=(0.75,0.00,0.25) | 136 | 2.3% | 4.44 | yes |
+| mo_td3_full@w=(1.00,0.00,0.00) | 136 | 2.2% | 4.44 | yes |
+| hpa(cpu=1.0,target=0.3) | 117 | 0.0% | 6.10 | yes |
+| hpa(cpu=1.0,target=0.4) | 117 | 0.0% | 6.10 | yes |
+| hpa(cpu=1.0,target=0.5) | 117 | 0.0% | 6.10 | yes |
+| hpa(cpu=1.0,target=0.6) | 117 | 0.0% | 6.10 | yes |
+| hpa(cpu=1.0,target=0.7) | 117 | 0.0% | 6.10 | yes |
 
-6. **The ablation gradient is one seed too.** The ordering
-   no-topology < SDG-only < full is consistent with the claim, but given
-   limitation 5 it should be confirmed across several seeds before it is
-   presented as established.
+Hypervolume in (violation rate, cost/budget), larger is better: **MO-TD3 0.448** ± 0.102 over 3 training seeds (seed 0: 0.531, seed 1: 0.508, seed 2: 0.305) vs. **HPA tuning sweep 0.449**. The plotted/listed MO-TD3 points are from the *median* seed (1), not the best (15 of 15 of its points are Pareto-optimal over all controllers).
+<!-- END:pareto -->
 
-Reproduce with `bash scripts/06_train_all_arms.sh && bash scripts/09_run_ablation.sh`.
+![Pareto fronts](docs/pareto.svg)
 
----
+![training convergence](docs/learning_curves.svg)
 
-## What's new in v2
+### Real-cluster validation
 
-| | v1 | v2 |
+The simulator is only worth anything if it predicts the real system. Two independent checks:
+
+**1. The service model, fitted to measurements** (`calibration/`, `scripts/13_calibrate.sh`): a single
+replica of the service on a real kind cluster, open-loop Poisson load from an in-cluster pod, at four CPU limits.
+
+<!-- BEGIN:calibration -->
+| CPU limit | measured saturation (req/s) | model (req/s) |
 |---|---|---|
-| **Agent architecture** | One output slot per *named* service (`MultiDiscrete([3]*6)`). Adding a 7th service broke the network shape. | **Shared per-node policy.** One small actor applied to every node's embedding. Verified: the same 16,676 parameters drive 6, 7, 20 or 100 services. |
-| **Graphs** | One merged graph; latency lived only in node features. | **SDG + EHG restored** as separate GCN branches — structure and live latency pressure. Tested: SDG stays fixed under load, EHG reacts. |
-| **Training topology** | Only the fixed 6-service graph — a shared policy would have overfit to it. | **Random topologies every episode** (4–9 services, varied fan-out), which is what actually teaches a general rule. |
-| **RL library** | Stable-Baselines3 | **Custom PPO** (`src/rl_agent/ppo.py`). SB3 needs a flat fixed-size observation and action vector; forcing graphs through it would reintroduce the fixed-size limit the shared policy exists to remove. |
-| **Safety** | Rate limit + bounds | Adds **asymmetric scale-down cooldown**, **circuit breaker** (5 consecutive breaches → HPA fallback → auto-recover), **staleness detection**. |
-| **Evidence** | "trained agent beats random" | **Full ablation vs HPA and static**, with per-component attribution. |
-| **Observability** | Terminal logs | **Live web dashboard** with the dependency graph, critical path, and decision feed. |
+| 0.10 core | 4.9 | 5.1 |
+| 0.25 core | 14.7 | 14.8 |
+| 0.50 core | 29.7 | 31.0 |
+| 1.00 core | 61.8 | 63.4 |
 
----
+Latency model vs. 36 measurements: steady region (n=31) mean-latency MAPE 24 %, p95 MAPE 27 %, 97% of p95 predictions within 2×; near saturation (n=5, held out) p95 MAPE 52 %.
+<!-- END:calibration -->
 
-## What this revision adds
+**2. Whole closed-loop controllers on the real cluster** (`scripts/15_live_experiment.sh`), each paired with the
+identical simulated run:
 
-Found and fixed while testing the system end to end:
+<!-- BEGIN:live -->
+Real kind cluster, 40 control steps of 10 s per run, client-observed latency from an in-cluster open-loop load generator, SLO = 250 ms p95. Each real run is paired with the identical simulated run.
 
-- **Prometheus outage no longer scales the cluster to minimum.** A failed
-  query used to be read as "0 requests/s", which the agent/HPA would act on.
-  Failures are now distinguished from "no traffic"; the live engine **holds**
-  (no scaling, dashboard banner, `stale: true`) when Prometheus or a
-  Deployment can't be read. The documented staleness protection was not
-  previously wired in.
-- **Live latency now matches what the policy was trained on.** Prometheus
-  latency is *inclusive* of downstream calls (gateway ≈ 220 ms when its own
-  work is 17 ms); the simulator/policy use a service's *own* latency. The live
-  engine now uses Jaeger `cpu_work` spans (with an inclusive→exclusive
-  estimate as fallback).
-- **Dashboard**: the ablation panel the README described didn't exist (the
-  endpoint was never called) — added, plus a Pareto panel, pause/resume/reset,
-  demo scenario switching, shadow/stale banners, and de-duplication of the
-  "blocked: would exceed max" feed spam. One background ticker now serves all
-  browser tabs (previously each tab ran its own control loop).
-- **Zero-touch topology** (listed under "future work"): `AUTODISCOVER_TOPOLOGY=1`
-  rebuilds the call graph and traffic shares from Jaeger parent/child spans,
-  merging conservatively (never drops a service it already manages). Verified
-  against the real service app: recovered 0.58/0.42 and 0.55/0.45 for
-  declared 0.6/0.4 and 0.5/0.5.
-- **In-cluster deployment** (also listed as future work): `autoscaler/Dockerfile`,
-  `k8s/03-autoscaler/` with a namespace-scoped Role (get/list deployments,
-  get/patch/update `deployments/scale` — nothing else), in-cluster credentials
-  with kubeconfig fallback, config via env vars.
-- **Pareto sweep**, **HPA-warm-start arm**, **calibration tool**,
-  `docker-compose.yml`, `Makefile`, CI (`.github/workflows/ci.yml`, including a
-  kind end-to-end job), an e2e smoke script, 66 pytest tests (was 10).
+| pattern | controller | live p95 ms | sim p95 ms | live SLO viol. | sim SLO viol. | live cost | sim cost |
+|---|---|---|---|---|---|---|---|
+| burst | static (no scaling) | 4627 | 4718 | 97.5% | 42.5% | 3.19 | 3.19 |
+| burst | **HPA, tuned** (CPU size × target, held-out grid) | 1569 | 260 | 42.5% | 5.0% | 4.22 | 4.18 |
+| burst | MO-TD3 (pure RL, seed 0) | 1218 | 192 | 50.0% | 5.0% | 3.15 | 3.54 |
+| burst | real Kubernetes HPA (60 % target, metrics-server) | 4406 | 469 | 100.0% | 75.0% | 2.50 | 3.48 |
+| diurnal | static (no scaling) | 4367 | 2145 | 72.5% | 62.5% | 3.19 | 3.19 |
+| diurnal | **HPA, tuned** (CPU size × target, held-out grid) | 515 | 158 | 47.5% | 0.0% | 3.98 | 3.92 |
+| diurnal | MO-TD3 (pure RL, seed 0) | 809 | 158 | 77.5% | 0.0% | 2.97 | 3.45 |
+| diurnal | real Kubernetes HPA (60 % target, metrics-server) | 2563 | 331 | 75.0% | 57.5% | 3.10 | 3.07 |
+<!-- END:live -->
+
+![real cluster vs simulator](docs/live_vs_sim.svg)
+
+**What the live runs show - and the gap they expose.** One run per cell (single seed, no confidence interval), SLO = 250 ms p95.
+* The pipeline works end to end on a real cluster: the learned agent and every baseline drove the real Kubernetes API (scaling and
+  resizing Deployments) from real Prometheus signals, and costs agree with the simulator within ~15 %. Where nothing adapts (static, burst) the
+  simulator reproduces the real p95 almost exactly (4718 vs 4627 ms).
+* **Closed-loop behaviour is much worse on the real cluster than simulated.** Every autoscaler shows 3-8× higher p95 and far more SLO
+  violations than its simulated twin (e.g. tuned HPA, burst: 1569 vs 260 ms; MO-TD3, diurnal: 809 vs 158 ms). The real traces show
+  why: a 3× step in load hits services that had just been scaled down to one pod, the backlog grows to 9 s with client timeouts, and recovery takes
+  minutes. The simulator is *optimistic about overload*: it models a queue draining at nominal capacity, whereas a saturated real pod is throttled and
+  contended (timeouts, GIL, exporter overhead) and serves less than nominal. This is the main open sim-to-real gap; the fix is to calibrate the
+  *overloaded* regime (the calibration data stops at ρ ≈ 1.15 and only for 15-s runs) and re-train - **not done**.
+* **The live evidence does not show the agent beating HPA.** Against the tuned HPA the agent is cheaper (3.15 vs 4.22 and 2.97 vs 3.98 cost units),
+  better on p95 for the burst (1218 vs 1569 ms) and worse for the diurnal pattern (809 vs 515 ms); both violate the SLO often. The real Kubernetes HPA
+  controller (60 % target, 0.25-core pods) is the worst of the adaptive controllers, as the simulated default HPA predicted
+  (burst 4406 ms; diurnal 2563 ms).
+* Because a real run takes ~7 min, only two traffic patterns and one seed were run. More seeds per cell would be needed before drawing any
+  conclusion about agent vs. tuned HPA on the cluster.
+
+### Reading the results (what they do and do not show)
+
+*Seed noise first.* RL training is noisy here: three seeds of the headline agent score 0.195, 0.207 and 0.255 on the
+deployed topology (mean 0.219 ± 0.026). Differences smaller than about one such standard deviation are not evidence.
+Most ablation arms have 1-3 seeds, so only consistent, large gaps are called findings below.
+
+1. **Against the baselines people actually run, the agent is far better.** Default HPA (60 % target, 0.25-core pods),
+   VPA, a threshold rule and no autoscaling breach the p95 SLO in 51-94 % of control windows; the agent in 2.9 %. Default HPA
+   is not a straw man: at 60 % utilisation a 0.25-core pod is already CFS-throttled, which the real-cluster calibration
+   measured (p95 ≈ 4× the idle latency), so a 3-hop chain cannot meet a 250 ms SLO.
+2. **Against a *tuned* HPA the result is parity-to-slightly-better, not a rout.** The tuned HPA (0.5-core pods, 50 % target - found by
+   grid search on held-out seeds, i.e. an optimistic baseline) scores 0.230. The pure-RL MO-TD3 scores 0.219 ± 0.026
+   (p95 168 vs 199 ms, 2.9 % vs 4.7 % violations, cost 3.57 vs 3.69, adapts after a burst in 9 s vs 16 s). Two of three seeds beat
+   it, one does not. On the unseen 14-service application it is 0.238 vs 0.245, and on the 16 held-out random topologies 0.250 vs 0.266:
+   the same sign everywhere, small in size. The case for the agent is not a large steady-state win - the tuned HPA is already close to
+   the efficient frontier of this physics - but that it needs **no per-application tuning** (the HPA's CPU size and target had to be
+   searched for) and covers the whole trade-off with one network (next point).
+3. **One network, a whole front.** Swept over 15 preferences, the single network traces a cost/SLO front. Its hypervolume
+   (0.448 ± 0.102 over three seeds) *equals* that of the 15-configuration HPA tuning sweep (0.449): two seeds beat it (0.531, 0.508), one is
+   clearly worse (0.305). Point for point, in the median seed the agent reaches 4.4 % violations at 3.27 cost units where the best HPA configuration
+   with similar violations (0.5 core, 50 % target) costs 3.68, and 0.5 % violations at 4.27 where the closest HPA point
+   (0.5 core, 30 % target) costs 4.60 for 2.2 %. The preference is a real control: it moves cost from 2.9 to 4.4 and violations from 7 % to 0.5-2 %.
+4. **Hybrid actions matter (the clearest ablation).** Removing the CPU/memory actions ("replicas only") is worse on all three evaluation
+   sets in both model families (e.g. 0.296 vs 0.219 on the deployed app, 0.423 vs 0.250 on random topologies). Right-sizing pods is
+   worth as much as adding pods - consistent with the CFS-throttling physics measured on the cluster.
+5. **Topology awareness: suggestive, not established.** In the pure-RL family the full dual-graph agent beats the no-topology and
+   SDG-only agents on all three evaluation sets (0.219 / 0.238 / 0.250 vs 0.276 / 0.296 / 0.312 for no-topology) - but the seed standard
+   deviations (up to 0.07) are as large as the gaps, and in the demonstration-seeded family the ordering is *reversed* (0.252 vs 0.238).
+   So: the topology-aware agent did not do worse, and did best when trained without a teacher, but this benchmark cannot
+   confirm the claim. A plausible reason is that in this application every service's own metrics already reveal where the pain is; a
+   benchmark where latency problems are *not* visible locally (real cascades, shared databases, retries) is where the claim would be tested properly.
+6. **HPA demonstrations make the agent worse.** Seeding the replay buffer and regularising the actor toward HPA/threshold behaviour
+   (`mo_td3_demo*`) tethers it to the teacher: 0.252 vs 0.219 on the deployed app, 0.285 vs 0.250 on random topologies. The headline
+   `mo_td3_full` is therefore trained by pure RL; the demonstration variants stay in the tables, not hidden.
+7. **Rounded-continuous replica head vs. straight-through categorical head:** the categorical head scored worse on all three sets
+   (0.259 / 0.291 / 0.318, one seed), and was unstable in the exploratory runs, so the rounded head is the default.
+8. **Single-objective** (latency-only reward) buys 0 % violations at 5.7 cost units: the scalarised-score penalty is by construction.
+
+What the study does **not** show: a significant win over a tuned HPA on a single preference; that GCN topology features are necessary;
+anything about the real Train-Ticket application; anything about clusters or CPUs unlike the one measured.
+
 
 ---
 
 ## Verification status
 
-What was actually executed, and what was not — please read before relying on it.
+What was actually executed (macOS arm64, 8 GB RAM, kind v0.27 / Kubernetes 1.32 in a 4 GiB OrbStack VM), not just written:
 
 | | status |
 |---|---|
-| 66 tests (`make test`) | **passing** |
-| Ablation re-evaluation reproduces `ablation_results.json` | **exact match** |
-| Training | every arm trains (1–5 iteration smoke tests; `rl_hpa_init` fully trained, 60 iterations). The four original checkpoints are the ones you shipped — **not re-trained** |
-| Dashboard in a real (headless Chromium) browser: graph, feed, table, ablation + Pareto panels, pause/reset/scenario | **run, no JS errors** |
-| Service app + Prometheus 2.53 + Jaeger 1.60 as plain processes; Prometheus/Jaeger clients; topology discovery; `LiveEngine` ticking on real metrics | **run** |
-| Live engine with no cluster / Prometheus down | **run** (holds, as designed) |
-| Kubernetes API calls (`k8s_client`) | **unit-tested with a fake API only** |
-| `docker build` of both images, `docker compose up` | **not run** — the sandbox this was developed in could not pull base images from any registry. `docker compose config` validates. |
-| kind/minikube deployment, in-cluster autoscaler, RBAC, `14_e2e_smoke.sh` | **not run** (same reason). The CI `e2e-kind` job runs it on GitHub's runners. |
-
-First thing to do on a machine with Docker: `make docker-build kind-up kind-load deploy e2e`
-(or push and let CI do it). If something in the untested Docker/K8s layer is off,
-that's where.
+| 219 tests (`make test`): components, clients, engines, dashboard API, agent, training, evaluation, manifests, README sync | **passing**, lint clean |
+| `docker build` of both images, `docker compose config` | **run** (images built and loaded into kind) |
+| kind deployment, in-cluster autoscaler with RBAC, `scripts/14_e2e_smoke.sh` (open-loop traffic from inside the cluster → Prometheus real CPU/RSS/own-latency series + Jaeger traces → in-cluster **MO-TD3** acting) | **passed** |
+| Calibration load tests on the real cluster (36 measurements, 4 CPU limits) | **run**, committed in `calibration/` |
+| Closed-loop comparison on the real cluster (static, tuned HPA, MO-TD3, real Kubernetes HPA × burst, diurnal; 1 seed) | **run** - see the gap discussed above |
+| Dashboard in a real browser: graph, feed, preference sliders → API, controller switch | **run**, no JS errors |
+| Windows scripts, minikube path, `docker compose up`, GitHub Actions workflow | **not run** (the workflow is new; its e2e job uses a 1-replica-per-service variant for a ~4-vCPU runner) |
 
 ---
 
-## Relationship to the original proposal
+## What was wrong with the previous version (and what this revision fixed)
 
-The project description (J26-SE-315) specifies an MO-TD3 agent with a hybrid
-continuous/discrete action space (CPU/memory *and* replica counts −3…+3),
-Train-Ticket as the benchmark application, 64-d embeddings and HPA **and VPA**
-baselines. **This codebase is a different design**: a shared per-node PPO policy
-with discrete replica deltas {−1, 0, +1}, a six-service synthetic application,
-a 16+16-d dual-GCN embedding, an HPA baseline only, and a scalarised (not
-vector-valued) reward. The README's "Design decisions" explain these choices,
-but if the proposal is what you'll be assessed against, the gaps above need
-either implementing or an explicit justification.
+The previous README listed its own untested layers honestly ("`docker build` … **not run**"). Running
+them on a real machine - Docker on macOS/arm64, a kind cluster, a 4 GiB VM - found these defects, all now fixed
+and covered by tests or by the end-to-end smoke test:
 
----
-
-## The dashboard
-
-```bash
-bash scripts/10_run_dashboard.sh          # demo mode — no cluster needed
-bash scripts/10_run_dashboard.sh live     # real Prometheus / Jaeger / Kubernetes
-```
-
-Then open **http://localhost:8080**.
-
-- **Dependency graph** — nodes ringed by utilisation, edge thickness = live
-  EHG latency pressure, and the current critical path illuminated with a
-  travelling pulse. This is the research thesis made visible.
-- **Decision feed** — every scaling action *and* every action the safety
-  layer blocked, with the reason.
-- **Service table** — live replicas, utilisation, latency, per-service action.
-- **Latency & cost timeline** — critical-path latency against the SLO line.
-- **Header** — RPS, critical-path latency, replica count, cores, and circuit
-  breaker state.
-
-`demo` mode drives the built-in simulator and needs nothing else running —
-useful for presentations and for your defence. `live` mode reads real metrics
-and applies real scaling (requires `scripts/05_port_forward.sh`).
+| # | Found | Fix |
+|---|---|---|
+| 1 | **The autoscaler image crashed on start** (`PermissionError` on `/app/src/dashboard/server.py` → `CrashLoopBackOff`): files checked out with mode 0600 were copied into an image whose non-root user could not read them. | `Dockerfile`: `chmod -R a+rX /app` before `USER` (`test_manifests.py`) |
+| 2 | **`04_verify_deployment.sh` timed out** on a first deploy: pulling Prometheus + Jaeger took > 3 minutes. | 600 s default, `VERIFY_TIMEOUT` |
+| 3 | **The "end-to-end PASSED" result was a false positive.** The old policy scaled *every* service to the maximum (12 → 36 pods) at 15 rps, leaving pods un-schedulable in a 4 GiB cluster; "replicas changed" was the only check. | New agent; cluster *budget* in the guard and in training; smoke test also checks real CPU/memory/own-latency signals and resizes |
+| 4 | **"CPU allocation" could not have mattered**: the service burnt *wall-clock* time, so a CPU limit changed nothing, and capacity was an assumed constant (267 req/s/replica) versus ~15–60 measured per replica. | Work is now `thread_time()` CPU work; capacity, latency, tail and CFS-throttling behaviour are **measured** and fitted (`calibration/`) |
+| 5 | **Utilisation was fiction on a real cluster**: `rps / (replicas × assumed capacity)`. | Real `process_cpu_seconds_total / (pods × CPU limit)`; real RSS; own-latency histogram; in-flight gauge |
+| 6 | **The simulator was memory-less and instantaneous**: no pod start-up, no rolling restarts, no queue that outlives a burst, no client timeouts. | Calibrated start-up (~4 s) and rolling-resize (~4.4 s/pod) delays, backlog + timeouts + drops |
+| 7 | **The HPA baseline was a straw man** (never more than +1 pod per step, 30 s stabilisation, one fixed 70 % target) and no VPA existed. | Faithful HPA (tolerance band, `max(4 pods, 100 %)` scale-up, stabilisation window), VPA recommender/updater, threshold rule, *and a tuned HPA* (grid search on held-out seeds) |
+| 8 | **Policy trained without the safety guard** that runs in production (rate limit, cooldown): it learned actions the deployed system would block. | The same guard runs inside the training environment; the critic learns from the *executed* action |
+| 9 | **PPO's scalar reward could not assign credit across services** → "scale everything to max" (documented as limitation 5). | MO-TD3: a centralised deep-set critic gives each service its own `∂Q/∂aᵢ` |
+| 10 | Probes on an overloaded, CPU-throttled pod could kill it (liveness on a starved process) or drop it from the Service (readiness) - turning overload into an outage. | Forgiving probe timeouts/thresholds; `maxSurge=1, maxUnavailable=0` so a resize never removes capacity |
+| 11 | A closed-loop load generator politely slows down when the system struggles - hiding the overload this project studies. | Open-loop Poisson generator; runs *inside* the cluster (no port-forward in the path) |
+| 12 | `http_requests_total` was incremented only on success; failures were invisible; a new `httpx` client (TCP handshake) per request wasted CPU. | Error counter + 502 on downstream failure; shared connection pool |
+| 13 | Jaeger's in-memory store was unbounded (OOM risk under long runs). | `MEMORY_MAX_TRACES` |
+| 14 | The README quoted numbers by hand. | Tables are generated from `results/*.json`; a test pins them |
 
 ---
 
 ## Quick start
 
-### Just the research results (no Kubernetes required)
+### Just the research results (no Kubernetes, no Docker)
 
 ```bash
-cd autoscaler
-pip install -r requirements.txt
-cd ..
-
-bash scripts/11_run_tests.sh          # 66 tests (or: make test)
-bash scripts/06_train_all_arms.sh     # train all 4 ablation arms
-bash scripts/09_run_ablation.sh       # head-to-head comparison table
-bash scripts/10_run_dashboard.sh      # live dashboard at :8080
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r autoscaler/requirements-dev.txt     # torch, numpy, fastapi, kubernetes, pytest ...
+make test                                          # the full test suite
+bash scripts/10_run_dashboard.sh                   # control room at http://localhost:8080 (demo mode)
+bash scripts/09_run_ablation.sh                    # re-run the comparison (~minutes)
+bash scripts/06_train_all_arms.sh                  # re-train every arm (SEEDS="0 1 2" JOBS=4 for the multi-seed study)
 ```
 
-### Docker only (no Kubernetes)
+### Docker only
 
 ```bash
 docker compose up --build            # 6 services + Prometheus + Jaeger + dashboard (demo mode)
-python traffic-generator/generate_traffic.py --pattern burst   # real load -> Prometheus/Jaeger
 ```
 
-### Full real-cluster deployment
+### Full real-cluster deployment (kind)
 
-Needs Docker, kind **or** minikube, kubectl, Python 3.11+.
-Windows users: see `WINDOWS_SETUP.md` — WSL2 is recommended.
+Needs Docker, [kind](https://kind.sigs.k8s.io), kubectl, Python 3.11+. Tested on macOS/arm64 with a 4 GiB / 8-CPU
+Docker VM (OrbStack) and kind v0.27 / Kubernetes 1.32.
 
 ```bash
-# kind
 make kind-up                         # or: bash scripts/00_kind_up.sh
-make docker-build kind-load
-# minikube instead:
-#   minikube start --cpus=4 --memory=6144 && eval $(minikube docker-env)
-#   bash scripts/01_build_images.sh
-
+make docker-build kind-load          # both images
 make deploy                          # namespace, Prometheus, Jaeger, 6 services, in-cluster autoscaler
-make e2e                             # traffic -> metrics/traces -> autoscaler scales (self-checking)
+make e2e                             # traffic -> metrics/traces -> autoscaler scales/resizes (self-checking)
 
-# dashboard of the in-cluster autoscaler (set AUTOSCALER_SHADOW=1 in
-# k8s/03-autoscaler/autoscaler.yaml to observe without scaling):
-bash scripts/05_port_forward.sh      # also forwards the dashboard to :8080
+bash scripts/05_port_forward.sh      # dashboard of the in-cluster autoscaler at http://localhost:8080
 ```
 
-Or run the autoscaler from your laptop instead of in-cluster
-(`WITH_AUTOSCALER=0 bash scripts/03_deploy_all.sh`):
+Run the autoscaler from your laptop instead of in-cluster (`WITH_AUTOSCALER=0 bash scripts/03_deploy_all.sh`):
 
 ```bash
-bash scripts/04_verify_deployment.sh # wait for readiness
-
-# separate terminal, leave running:
-bash scripts/05_port_forward.sh      # gateway :8000, prometheus :9090, jaeger :16686
-
-bash scripts/06_train_all_arms.sh    # train (no cluster needed for this)
-bash scripts/07_run_traffic.sh burst 180 20     # real HTTP load
+bash scripts/05_port_forward.sh                          # separate terminal, leave running
 bash scripts/08_run_autoscaler.sh --shadow --iterations 20   # observe only
 bash scripts/08_run_autoscaler.sh --iterations 60            # act for real
-bash scripts/10_run_dashboard.sh live            # watch it happen
+bash scripts/08_run_autoscaler.sh --controller hpa           # run a baseline instead of the agent
 ```
 
-Watch pods react in another terminal:
+Reproduce the real-cluster experiments:
+
 ```bash
-kubectl get pods -n autoscaler-poc -w
+bash scripts/13_calibrate.sh         # re-measure the service on your cluster, re-fit the simulator (~10 min)
+bash scripts/16_install_metrics_server.sh                      # only for the real-HPA arm
+CONTROLLERS="static hpa_tuned mo_td3" PATTERNS="burst diurnal" bash scripts/15_live_experiment.sh   # ~8 min per run
+python -m src.evaluation.report      # (from autoscaler/) refresh the README tables
 ```
+
+Watch pods react: `kubectl get pods -n autoscaler-poc -w`. On a machine with fewer than ~6 free CPU cores, set
+`CLUSTER_BUDGET_CORES` (env var of the autoscaler) to what your cluster can actually schedule.
+Windows: see [`WINDOWS_SETUP.md`](WINDOWS_SETUP.md).
+
+---
+
+## The control room
+
+```bash
+bash scripts/10_run_dashboard.sh          # demo mode - the calibrated simulator, no cluster
+bash scripts/10_run_dashboard.sh live     # real Prometheus / Jaeger / Kubernetes
+```
+
+Open **http://localhost:8080**: the dependency graph with live EHG latency pressure and the illuminated critical path;
+a decision feed that shows every scale/resize *and every action the safety layer blocked, with the reason*; per-service
+pods / CPU / memory / utilisation; **preference sliders that re-steer the trained network at run time** (SLO ↔ cost ↔
+balance); a controller switch (MO-TD3 / HPA / VPA / threshold / static) to watch the baselines handle the same traffic;
+the comparison, Pareto, calibration and training-convergence panels.
 
 ---
 
@@ -314,93 +384,100 @@ kubectl get pods -n autoscaler-poc -w
 inventory-service  pricing-service   user-service
 ```
 
-All six are the **same** Docker image (`services/generic-service/`),
-configured per-Deployment by environment variable. Each does real CPU-bound
-work through a bounded thread pool, so more replicas genuinely means more
-throughput and overload genuinely queues. Prometheus metrics on `/metrics`,
-OpenTelemetry traces exported to Jaeger.
+All six are the **same** image (`services/generic-service/`), configured per Deployment by environment variable. Each
+request burns 15 ms of CPU *time* in a bounded thread pool, then calls one downstream chosen by the traffic shares. It
+exports request, error and latency histograms (own work vs. inclusive of downstream), in-flight requests, and the process
+CPU/memory the autoscaler uses as its real utilisation signal; OpenTelemetry traces (25 % head sampling) go to Jaeger.
+`k8s/01-services/*.yaml` are **generated** from `autoscaler/src/topologies.py` (`make manifests`), so the topology the
+agent reasons about cannot drift from the one that is deployed.
+
+---
+
+## Design decisions
+
+**One shared policy for any number of services.** The actor's weights are applied to every service's embedding; the critic is
+a deep set over (embedding, action) pairs. The number of services is a tensor dimension, never a weight shape - the same
+parameters drive 4, 6, 14 or 100 services (tested), which is how the agent is evaluated on a 14-service application it never saw.
+
+**Scalarised preference, vector rewards.** Each critic outputs one Q per objective; the actor ascends `w · Q`. `w` is an *input*:
+sampled per training episode (and re-labelled at update time), chosen by the operator at run time. Sweeping `w` traces the
+latency/cost front from a single network.
+
+**Hybrid actions.** Replica deltas are discrete (−3…+3); CPU and memory are continuous targets on a log scale. The discrete head is
+trained with a straight-through relaxation (the critic always sees a hard one-hot, exactly what is executed). Resizes are applied by
+patching the Deployment's pod template (a rolling update, `maxSurge=1/maxUnavailable=0`, i.e. VPA's "recreate" mode); in-place pod
+resize would avoid the restart but is not available on every cluster version and would leave the template stale.
+
+**The simulator is the training environment, the cluster is the judge.** A real step is ≥ 10 s; PPO/TD3 need ≳ 10⁵ of them.
+Hence a simulator - but fitted to measurements (capacity, queueing, CFS throttling, tails, start-up and rolling-restart delays),
+with the fit error reported, and *validated* by running closed-loop controllers on the real cluster.
+
+**Safety is part of the system, not a wrapper.** Bounds, memory floor, asymmetric scale-down cooldown, resize deadband +
+cooldown, cluster budget, circuit breaker (→ HPA rules) and staleness detection sit between the policy and the API, and run
+*inside* the training environment too. A Prometheus outage **holds** instead of reading "no data" as "no load".
+
+**Demonstrations, honestly ablated.** An optional mode seeds the replay buffer with HPA/threshold episodes and adds a behaviour-cloning term
+(TD3+BC; the `mo_td3_demo*` arms). It made the agent *worse*, so the headline agent is pure RL.
+
+**Critical path by depth-first search.** A memoised DFS over the weighted call DAG (verified against brute force), as the proposal
+specifies; the per-request latency a client sees is a probability mixture over call chains, which the simulator uses for its end-to-end percentiles.
+
+---
+
+## Deviations from the proposal
+
+* **Benchmark.** Train-Ticket's real ~40 Java/Spring services + MongoDB/MySQL need far more RAM than a laptop-class cluster. The repo
+  runs a 6-service application on the cluster and uses a **14-service application with Train-Ticket's call structure** (`trainticket14`,
+  generated by `scripts/gen_manifests.py --topology trainticket14`) as the *unseen-topology* generalisation test in the simulator.
+  It has **not** been run on the cluster, and no result here is a claim about the real Train-Ticket.
+* **Libraries.** Gymnasium / Stable-Baselines3 / MORL-Baselines assume fixed-size flat observation and action vectors - the exact
+  limitation the topology-agnostic shared policy removes. The agent is plain PyTorch.
+* **VPA baseline** is a faithful re-implementation of the recommender/updater logic (p90 usage + margin, restart on > 10 % change),
+  not the VPA controller image. The HPA comparison on the cluster *can* use the real Kubernetes HPA (`k8s_hpa`).
+* **Multi-objective method.** Preference-conditioned scalarisation with vector critics (one Q per objective). It yields a Pareto *set*
+  by sweeping `w`, but it is not a guarantee of covering non-convex fronts.
+* **Memory** is a real, cost-bearing action, but the service's resident set (~55 MiB) hardly depends on load, so the agent mostly learns
+  "don't over-provision it" and never to fear OOM; the guard enforces a floor of 1.25× the working set.
+* **Node autoscaling** is out of scope: the agent scales pods inside a fixed cluster budget.
+
+## Known gaps
+
+* One application topology has been run on a real cluster, on one machine; absolute numbers are properties of that machine and of Python
+  behind the GIL. `scripts/13_calibrate.sh` re-fits everything to yours.
+* The learned policy's advantage over a *tuned* HPA is **small and within seed noise** (see the analysis above); RL training is
+  high-variance here (headline score 0.195-0.255 across seeds), and more seeds per ablation arm would be needed to settle the topology question.
+* **Resize churn.** The agent re-sizes pods often (every service, whenever its resize cooldown of 6 steps and 15 % deadband allow); each resize
+  is a rolling restart. The in-cluster smoke test showed Deployments rolling nearly continuously, which costs capacity and start-up CPU and probably
+  contributes to the live gap. A wider deadband / longer cooldown in the guard (and in training) is the obvious next step; not done.
+* Topology discovery adds services/edges but never removes them (a thin trace sample cannot tell "removed" from "not sampled").
+* Rolling deployments of the services themselves are not coordinated with scaling actions.
 
 ---
 
 ## Project structure
 
 ```
-├── services/generic-service/     one real microservice, deployed 6×
-├── k8s/                          namespace, services, Prometheus, Jaeger,
-│                                 03-autoscaler/ (in-cluster autoscaler + RBAC)
-├── deploy/compose/               Prometheus config for docker-compose.yml
-├── docker-compose.yml  Makefile  .github/workflows/ci.yml
-├── traffic-generator/            real async HTTP load generator
-├── autoscaler/
-│   ├── models/                   trained policies (one per ablation arm)
-│   ├── results/                  ablation results as JSON
-│   ├── Dockerfile                autoscaler + dashboard image
-│   ├── tests/                    66 tests: components, clients, live engine,
-│   │                             dashboard API, models/eval, service app
-│   └── src/
-│       ├── config.py             topology, weights, safety, all tunables
-│       ├── topology_intel/
-│       │   ├── graph_builder.py  SDG (static) + EHG (dynamic latency)
-│       │   └── dual_gcn.py       two-branch GCN, ablation switches built in
-│       ├── rl_agent/
-│       │   ├── shared_policy.py  ★ topology-agnostic actor-critic
-│       │   ├── env.py            graph-structured environment
-│       │   ├── ppo.py            custom PPO for variable-size graphs
-│       │   └── imitation.py      HPA behaviour-cloning warm start
-│       ├── safety/guards.py      bounds, rate limit, cooldown, breaker
-│       ├── baselines/rule_based.py   faithful HPA reimplementation
-│       ├── evaluation/
-│       │   ├── train_arm.py      train one ablation arm
-│       │   ├── evaluate.py       head-to-head comparison
-│       │   └── pareto.py         reward-weight sweep + Pareto front
-│       ├── simulation/simulator.py   calibrated sim + random topologies
-│       ├── data_collection/      real Prometheus + Jaeger clients
-│       ├── k8s_action/           real Kubernetes scaling
-│       ├── inference/live_loop.py    headless control loop
-│       └── dashboard/            FastAPI + WebSocket + frontend
-└── scripts/                      numbered, run in order
+├── services/generic-service/     the one microservice image (CPU-time work, rich metrics, OTel)
+├── k8s/                          namespace · 01-services (generated) · 02-observability · 03-autoscaler (+RBAC) · 04-loadgen
+├── calibration/                  real-cluster measurements the simulator is fitted to
+├── deploy/compose/  docker-compose.yml  Makefile  .github/workflows/ci.yml
+├── docs/TAF_TRACEABILITY.md      proposal requirement → code → test → status
+├── traffic-generator/            open-loop Poisson generator + calibration load test
+├── scripts/                      numbered, run in order (+ gen_manifests.py, windows/)
+└── autoscaler/
+    ├── models/                   trained MO-TD3 checkpoints (models/seeds/ for extra seeds)
+    ├── results/                  ablation, Pareto, live-cluster results, training curves (JSON)
+    ├── tests/                    unit + integration tests (components, clients, engines, API, agent, eval, manifests)
+    └── src/
+        ├── config.py  topologies.py     tunables · demo6 / trainticket14
+        ├── topology_intel/              graph_builder (SDG, EHG, features) · dual_gcn · critical_path (DFS)
+        ├── rl_agent/                    mo_td3 · trainer · env · rewards · replay · batching · controllers
+        ├── simulation/                  simulator · service_model · calibration (+ sim_params.json)
+        ├── safety/guards.py             bounds · memory floor · cooldowns · budget · breaker · staleness
+        ├── baselines/rule_based.py      HPA · VPA · threshold · static
+        ├── evaluation/                  metrics · evaluate · pareto · train_agent · live_experiment · report
+        ├── data_collection/             Prometheus + Jaeger clients
+        ├── k8s_action/k8s_client.py     real scaling and resizing
+        ├── inference/                   engines (demo/live) · live_state · live_loop
+        └── dashboard/                   FastAPI + WebSocket + frontend
 ```
-
----
-
-## Design decisions
-
-**Scalarized multi-objective reward, not a Pareto front.** A weighted sum of
-SLO violation, cost, and load variance. True Pareto-front MORL is a separate
-research undertaking; the scalarized form still expresses the trade-off
-explicitly, and the weight-sensitivity finding above shows the knob works.
-
-**Replica-count actions only.** In-place pod CPU resize is still a beta
-Kubernetes feature and unsafe to assume on a student cluster. This mirrors
-what HPA itself does.
-
-**Critical path via exact DAG dynamic programming.** Longest-path is NP-hard
-on cyclic graphs, but our call graph is acyclic by construction, so the DP is
-exact and cheap. On the real cluster the per-service latencies come from real
-Jaeger spans (each service emits a `cpu_work` span for its own processing).
-
-**Simulator-first training.** A real cluster step means waiting for pods to
-schedule — seconds to minutes. Thousands of RL steps that way is impractical.
-The simulator is calibrated against real measurements and trains in minutes.
-
-**GCN and policy trained jointly here** (unlike v1's frozen pretrained GCN).
-With the graph encoder inside the shared policy and PPO driving it end to
-end, training stayed stable across all arms — but a pretraining stage remains
-a reasonable option if you extend to larger topologies.
-
----
-
-## Known gaps / future work
-
-- **Sim-to-real gap is unmeasured.** Run the ablation on the live cluster.
-- **Topology discovery adds, never removes.** `AUTODISCOVER_TOPOLOGY=1`
-  picks up new services/edges from Jaeger but won't drop a service it already
-  manages (a thin trace sample can't distinguish "removed" from "not sampled").
-- **Cold start.** A brand-new service has no history; falling back to HPA
-  rules for it until enough traffic accumulates is the standard answer.
-- **Cluster capacity.** This scales pods, not nodes. Pair with the Kubernetes
-  Cluster Autoscaler for node-level capacity.
-- **In-cluster manifests are untested here** (see Verification status). The
-  Role grants only what `k8s_client.py` uses.
-- **Rolling deployments** of the services themselves aren't coordinated with
-  scaling actions; pausing the autoscaler during a rollout would be sensible.

@@ -24,7 +24,7 @@ Legend: ✅ implemented as specified · ◐ implemented with a stated deviation 
 |---|---|---|---|
 | 2.1 Service Dependency Graph | `graph_builder.build_sdg`, `jaeger_client.discover_topology` (zero-touch topology from traces) | `test_topology_and_graphs.py`, `test_engine_and_api.py` | ✅ |
 | 2.2 Execution History Graph | `graph_builder.build_ehg` (edge = share × callee inclusive p95 / SLO; trace-derived edge percentiles when available) | `test_topology_and_graphs.py` | ✅ |
-| 2.3 2-layer GCN, 128 hidden units, 64-d embedding | `topology_intel/dual_gcn.py` (two branches × 32-d = 64-d per service; `config.GCN_HIDDEN_DIM = 128`) | `test_agent.py::test_gcn_embedding_dimensions…` | ✅ |
+| 2.3 2-layer GCN, 128 hidden units, 64-d embedding | `topology_intel/dual_gcn.py` (two branches × 32-d = 64-d per service; `config.GCN_HIDDEN_DIM = 128`); `MOTD3Agent.graph_embedding()` returns the 64-d whole-application vector + critical-path nodes | `test_agent.py::test_gcn_embedding_dimensions…` | ✅ |
 | 2.4 DFS critical path | `topology_intel/critical_path.py::critical_path_dfs` (memoised DFS; verified against brute force) | `test_topology_and_graphs.py` | ✅ |
 | "Critical Path nodes" passed to the agent | node features `on_critical_path`, `critical_path_share` (+ dashboard) | `test_topology_and_graphs.py` | ✅ |
 
@@ -33,8 +33,8 @@ Legend: ✅ implemented as specified · ◐ implemented with a stated deviation 
 | TAF requirement | Where | Tests | Status |
 |---|---|---|---|
 | 3.1 RL environment (state, observation flow, transitions) | `rl_agent/env.py` (graph-structured state, guard in the loop, vector reward), `simulation/simulator.py` (calibrated on a real cluster) | `test_guard_and_env.py`, `test_simulator.py` | ✅ |
-| 3.2 Hybrid action space: continuous CPU/memory, discrete replica delta −3…+3 | `config.REPLICA_DELTA_OPTIONS`, `env.decode_action` (log-scale CPU 0.1–1.0 core, memory 96–512 MiB targets), `k8s_client.set_resources` (real resize via rolling update) | `test_guard_and_env.py`, `test_clients.py` | ✅ |
-| 3.3 MO-TD3 | `rl_agent/mo_td3.py`: twin critics with **one Q per objective**, target-policy smoothing, delayed actor, Polyak targets; preference-conditioned actor; straight-through discrete head | `test_agent.py` | ✅ |
+| 3.2 Hybrid action space: continuous CPU/memory, discrete replica delta −3…+3 | `config.REPLICA_DELTA_OPTIONS`, `env.decode_action` (log-scale CPU 0.1–1.0 core, memory 96–512 MiB targets; replica delta = `round(3a)` of a continuous head, or a 7-way categorical head as an ablation), `k8s_client.set_resources` (real resize via rolling update) | `test_guard_and_env.py`, `test_clients.py` | ✅ |
+| 3.3 MO-TD3 | `rl_agent/mo_td3.py`: twin critics with **one Q per objective**, target-policy smoothing, delayed actor, Polyak targets; preference-conditioned actor; deep-set critic that gives each service its own ∂Q/∂aᵢ | `test_agent.py` | ✅ |
 | 3.4 Train and optimise the policy | `rl_agent/trainer.py` (random topologies every episode, preference sampling + relabelling, n-step returns, TD3+BC demonstrations, held-out validation, best-checkpoint selection) | `test_training_and_eval.py` | ✅ |
 | Concrete output "Scale Service-A to 5 pods, allocate 2.0 CPU cores" | `engines.py` payload / `live_loop.py` log lines (`gateway: +2pod, cpu 0.25->0.50`) | `test_engine_and_api.py` | ✅ |
 

@@ -3,7 +3,7 @@
 #   .\06_train_all_arms.ps1 -Episodes 800 -Seeds 0,1,2
 param([int]$Episodes = 1000, [int[]]$Seeds = @(0))
 Set-Location "$PSScriptRoot\..\..\autoscaler"
-$arms = @("mo_td3_full","mo_td3_sdg_only","mo_td3_no_topology","mo_td3_single_obj","mo_td3_replica_only","mo_td3_no_demo","mo_td3_categorical")
+$arms = @("mo_td3_full","mo_td3_sdg_only","mo_td3_no_topology","mo_td3_single_obj","mo_td3_replica_only","mo_td3_categorical","mo_td3_demo")
 foreach ($seed in $Seeds) {
     foreach ($arm in $arms) {
         Write-Host ""

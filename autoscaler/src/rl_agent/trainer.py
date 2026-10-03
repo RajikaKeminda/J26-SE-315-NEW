@@ -4,9 +4,9 @@ trainer.py
 Training loop for the MO-TD3 agent (and its ablation arms) on the calibrated
 simulator.
 
-  * Every episode runs on a NEW RANDOM TOPOLOGY (4-9 services, varied fan-out and
-    per-service work), so the shared policy must learn a general rule rather than
-    memorise one graph.
+  * Every episode runs on a NEW RANDOM TOPOLOGY (4-12 services, 2-5 tiers, varied fan-out,
+    shared callees, per-service work), so the shared policy must learn a general rule rather
+    than memorise one graph.
   * Every episode draws a PREFERENCE vector w ~ Dirichlet(1,1,1) (30 % of the time the
     default preference), and stored transitions are re-labelled with fresh preferences
     at update time, so one network learns the whole latency/cost trade-off.
@@ -36,18 +36,35 @@ from src.simulation.simulator import random_topology
 from src.topologies import DEMO6
 
 # arm -> options.  `topology/ehg/replica_only` select the architecture ablations,
-# `fixed_w` makes the reward single-objective, `demos` toggles the demonstration seeding, `head`
-# overrides the replica head.
+# `fixed_w` makes the reward single-objective, `demos` toggles the HPA-demonstration seeding
+# (TD3+BC), `head` overrides the replica head.
+#
+# The headline agent `mo_td3_full` is trained by pure reinforcement learning. The study found that
+# seeding it with HPA demonstrations makes it WORSE (it stays tethered to the teacher's behaviour),
+# so every `mo_td3_demo*` arm is the same model WITH demonstrations - reported side by side, not
+# hidden. Each ablation arm differs from its family's full model by exactly one factor.
+def _arm(topology=True, ehg=True, replica_only=False, fixed_w=None, demos=False, head=None):
+    out = dict(topology=topology, ehg=ehg, replica_only=replica_only, fixed_w=fixed_w, demos=demos)
+    if head:
+        out["head"] = head
+    return out
+
+
 ARMS = {
-    "mo_td3_full":         dict(topology=True,  ehg=True,  replica_only=False, fixed_w=None,              demos=True),
-    "mo_td3_sdg_only":     dict(topology=True,  ehg=False, replica_only=False, fixed_w=None,              demos=True),
-    "mo_td3_no_topology":  dict(topology=False, ehg=False, replica_only=False, fixed_w=None,              demos=True),
-    "mo_td3_single_obj":   dict(topology=True,  ehg=True,  replica_only=False, fixed_w=(1.0, 0.0, 0.0),   demos=True),
-    "mo_td3_replica_only": dict(topology=True,  ehg=True,  replica_only=True,  fixed_w=None,              demos=True),
-    "mo_td3_no_demo":      dict(topology=True,  ehg=True,  replica_only=False, fixed_w=None,              demos=False),
-    # straight-through categorical replica head instead of the rounded-continuous one (see mo_td3.py)
-    "mo_td3_categorical":  dict(topology=True,  ehg=True,  replica_only=False, fixed_w=None,              demos=True,
-                                head="categorical"),
+    # pure RL family
+    "mo_td3_full":         _arm(),
+    "mo_td3_sdg_only":     _arm(ehg=False),
+    "mo_td3_no_topology":  _arm(topology=False, ehg=False),
+    "mo_td3_single_obj":   _arm(fixed_w=(1.0, 0.0, 0.0)),
+    "mo_td3_replica_only": _arm(replica_only=True),
+    "mo_td3_categorical":  _arm(head="categorical"),
+    # the same models, seeded with HPA / threshold demonstrations (TD3+BC)
+    "mo_td3_demo":                _arm(demos=True),
+    "mo_td3_demo_sdg_only":       _arm(ehg=False, demos=True),
+    "mo_td3_demo_no_topology":    _arm(topology=False, ehg=False, demos=True),
+    "mo_td3_demo_single_obj":     _arm(fixed_w=(1.0, 0.0, 0.0), demos=True),
+    "mo_td3_demo_replica_only":   _arm(replica_only=True, demos=True),
+    "mo_td3_demo_categorical":    _arm(head="categorical", demos=True),
 }
 
 
@@ -231,5 +248,5 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
     config.TD3_TAU, config.TD3_POLICY_DELAY = saved_cfg
     meta = {"arm": arm, "seed": seed, "episodes": episodes, "history": history,
             "best_val_scalarized": best, "selected_fresh_val_scalarized": fresh, "eval_preference": [round(float(x), 6) for x in eval_w],
-            "topology_training": "random 4-9 services"}
+            "topology_training": "random 4-12 services, 2-5 tiers"}
     return agent, best_state, meta

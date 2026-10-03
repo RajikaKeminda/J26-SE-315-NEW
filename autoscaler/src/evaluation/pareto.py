@@ -26,7 +26,9 @@ import json
 import os
 
 from src import config
-from src.evaluation.evaluate import HPA_GRID_CPU, HPA_GRID_TARGET, load_arm
+import numpy as np
+
+from src.evaluation.evaluate import HPA_GRID_CPU, HPA_GRID_TARGET, available_seeds, load_arm
 from src.evaluation.metrics import evaluate_controller
 from src.rl_agent import rewards
 from src.rl_agent.controllers import RLController, RuleController
@@ -66,6 +68,28 @@ def _point(name, kind, family, r, **extra):
                                  "mean_util", "load_variance", "obj_slo", "obj_cost", "obj_balance")}}
 
 
+def baseline_points(topology, episodes):
+    """static / threshold / VPA and the whole HPA tuning sweep (CPU size x utilisation target)."""
+    S, points = topology.services, []
+    for name in ("static", "threshold", "vpa"):
+        r = evaluate_controller(lambda n=name: RuleController(n, S), topology, n_episodes=episodes)
+        points.append(_point(name, "baseline", name, r))
+    for cpu in HPA_GRID_CPU:
+        for target in HPA_GRID_TARGET:
+            r = evaluate_controller(
+                lambda c=cpu, t=target: RuleController("hpa", S, initial={"cpu": c}, target_utilization=t),
+                topology, n_episodes=episodes)
+            points.append(_point(f"hpa(cpu={cpu},target={target})", "baseline", "hpa", r,
+                                 hpa_cpu=cpu, hpa_target=target))
+    return points
+
+
+def flag(points):
+    for p, nd in zip(points, pareto_front(points)):
+        p["pareto_optimal"] = nd
+    return points
+
+
 def sweep(agent, topology, episodes, grid_step=0.25, include_baselines=True, arm="mo_td3_full", log=print):
     points = []
     for w in rewards.preference_grid(grid_step):
@@ -76,20 +100,8 @@ def sweep(agent, topology, episodes, grid_step=0.25, include_baselines=True, arm
         log(f"  w=({w[0]:.2f},{w[1]:.2f},{w[2]:.2f})  p95={r['p95_latency']:7.1f}ms  "
             f"cost={r['mean_cost']:.2f}  viol={r['slo_violation_rate'] * 100:5.1f}%")
     if include_baselines:
-        S = topology.services
-        for name in ("static", "threshold", "vpa"):
-            r = evaluate_controller(lambda n=name: RuleController(n, S), topology, n_episodes=episodes)
-            points.append(_point(name, "baseline", name, r))
-        for cpu in HPA_GRID_CPU:
-            for target in HPA_GRID_TARGET:
-                r = evaluate_controller(
-                    lambda c=cpu, t=target: RuleController("hpa", S, initial={"cpu": c}, target_utilization=t),
-                    topology, n_episodes=episodes)
-                points.append(_point(f"hpa(cpu={cpu},target={target})", "baseline", "hpa", r,
-                                     hpa_cpu=cpu, hpa_target=target))
-    for p, nd in zip(points, pareto_front(points)):
-        p["pareto_optimal"] = nd
-    return points
+        points += baseline_points(topology, episodes)
+    return flag(points)
 
 
 def main():
@@ -100,32 +112,48 @@ def main():
     ap.add_argument("--out", default=config.PARETO_PATH)
     args = ap.parse_args()
 
-    agent = load_arm(args.arm)
-    if agent is None:
+    seeds = available_seeds(args.arm)
+    if not seeds:
         raise SystemExit(f"no checkpoint for {args.arm}: run `python -m src.evaluation.train_agent {args.arm}`")
-    points = sweep(agent, DEMO6, args.episodes, args.grid_step, arm=args.arm)
-
     budget = config.BUDGET_PER_SERVICE * len(DEMO6.services)
-    fam = {}
-    for fname in ("mo_td3", "hpa"):
-        sel = [p for p in points if p["family"] == fname]
-        fam[fname] = {"hypervolume": hypervolume_2d(sel, budget), "n_points": len(sel),
-                      "n_pareto_optimal": sum(p["pareto_optimal"] for p in sel)}
+
+    print("baselines ...")
+    base = baseline_points(DEMO6, args.episodes)
+    hpa_pts = [p for p in base if p["family"] == "hpa"]
+    per_seed = {}
+    for sd in seeds:
+        print(f"\n=== {args.arm} seed {sd}: one network swept over {len(rewards.preference_grid(args.grid_step))} preferences ===")
+        rl = sweep(load_arm(args.arm, sd), DEMO6, args.episodes, args.grid_step, include_baselines=False, arm=args.arm)
+        for p in rl:
+            p["seed"] = sd
+        flagged = flag([dict(p) for p in rl] + [dict(p) for p in base])
+        per_seed[sd] = {"points": rl, "hypervolume": hypervolume_2d(rl, budget),
+                        "n_pareto_optimal": sum(p["pareto_optimal"] for p in flagged if p["family"] == "mo_td3")}
+
+    hvs = {sd: v["hypervolume"] for sd, v in per_seed.items()}
+    rep = sorted(hvs, key=hvs.get)[len(hvs) // 2]                 # the MEDIAN seed - not the best one
+    points = flag([dict(p) for p in per_seed[rep]["points"]] + [dict(p) for p in base])
+    fam = {"mo_td3": {"hypervolume": float(np.mean(list(hvs.values()))),
+                      "hypervolume_std": float(np.std(list(hvs.values()))),
+                      "hypervolume_by_seed": {str(k): v for k, v in hvs.items()},
+                      "representative_seed": rep, "n_points": len(rewards.preference_grid(args.grid_step)),
+                      "n_pareto_optimal": sum(p["pareto_optimal"] for p in points if p["family"] == "mo_td3")},
+           "hpa": {"hypervolume": hypervolume_2d(hpa_pts, budget), "n_points": len(hpa_pts),
+                   "n_pareto_optimal": sum(p["pareto_optimal"] for p in points if p["family"] == "hpa")}}
 
     print("\n" + "=" * 96)
-    print(f"{'point':<46}{'p95 ms':>9}{'cost':>8}{'SLO viol':>11}{'pareto':>9}")
-    print("=" * 96)
-    for p in sorted(points, key=lambda x: x["mean_cost"]):
-        print(f"{p['name']:<46}{p['p95_latency']:9.1f}{p['mean_cost']:8.2f}"
-              f"{p['slo_violation_rate'] * 100:10.1f}%{'  *' if p['pareto_optimal'] else '':>9}")
-    print("(* = non-dominated on SLO-violation rate, p95 latency and cost, over ALL controllers)")
-    print(f"\nhypervolume (higher = better front):  MO-TD3 {fam['mo_td3']['hypervolume']:.3f}   "
+    print(f"Pareto points (median seed {rep} of {sorted(hvs)}), non-dominated over ALL controllers:")
+    print(f"{'point':<46}{'p95 ms':>9}{'cost':>8}{'SLO viol':>11}")
+    for p in sorted([p for p in points if p["pareto_optimal"]], key=lambda x: x["mean_cost"]):
+        print(f"{p['name']:<46}{p['p95_latency']:9.1f}{p['mean_cost']:8.2f}{p['slo_violation_rate'] * 100:10.1f}%")
+    print(f"\nhypervolume (higher = better front): MO-TD3 {fam['mo_td3']['hypervolume']:.3f} "
+          f"± {fam['mo_td3']['hypervolume_std']:.3f} over {len(seeds)} training seed(s) {hvs}   "
           f"HPA tuning sweep {fam['hpa']['hypervolume']:.3f}")
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as f:
-        json.dump({"episodes": args.episodes, "arm": args.arm, "objectives": list(OBJECTIVES),
-                   "families": fam, "points": points}, f, indent=2)
+        json.dump({"episodes": args.episodes, "arm": args.arm, "objectives": list(OBJECTIVES), "families": fam,
+                   "points": points, "all_seeds": {str(k): v for k, v in per_seed.items()}}, f, indent=2)
     print(f"\nSaved -> {args.out}")
 
 

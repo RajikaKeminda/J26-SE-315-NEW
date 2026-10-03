@@ -376,8 +376,10 @@ function pushFeed(d){
       items.push({cls:'up',body:`resized <b>${short(n.id)}</b> <em>cpu ${n.cpu}→${n.applied_cpu} · mem ${n.mem}→${n.applied_mem}MiB</em>`});
     const acting=n.applied_delta!==0||n.applied_cpu!==n.cpu||n.applied_mem!==n.mem;
     if(n.blocked_reason&&!acting){
-      if(lastBlocked[n.id]!==n.blocked_reason) items.push({cls:'block',body:`<b>${short(n.id)}</b> <em>${n.blocked_reason}</em>`});
-      lastBlocked[n.id]=n.blocked_reason;
+      // a cooldown counting down ("3 of 6" -> "4 of 6") is ONE event, not one per window
+      const key=n.blocked_reason.replace(/\(\d+ of \d+\)/g,'').trim();
+      if(lastBlocked[n.id]!==key) items.push({cls:'block',body:`<b>${short(n.id)}</b> <em>${n.blocked_reason}</em>`});
+      lastBlocked[n.id]=key;
     } else lastBlocked[n.id]=null;
   });
   if(!items.length) return;
@@ -499,7 +501,8 @@ function drawObjectives(d){
 /* ---------- comparison / pareto / calibration / training panels ---------- */
 const LABEL={static:'static (no scaling)',threshold:'threshold rule',hpa:'HPA (default 60%)',hpa_tuned:'HPA (tuned)',vpa:'VPA',
   mo_td3_full:'MO-TD3 full (dual graph, hybrid)',mo_td3_sdg_only:'MO-TD3 SDG only',mo_td3_no_topology:'MO-TD3 no topology',
-  mo_td3_single_obj:'MO-TD3 single objective',mo_td3_replica_only:'MO-TD3 replicas only',mo_td3_no_demo:'MO-TD3 no demonstrations'};
+  mo_td3_single_obj:'MO-TD3 single objective',mo_td3_replica_only:'MO-TD3 replicas only',mo_td3_categorical:'MO-TD3 categorical head',
+  mo_td3_demo:'MO-TD3 + HPA demonstrations',mo_td3_demo_sdg_only:'+demos SDG only',mo_td3_demo_no_topology:'+demos no topology',mo_td3_demo_single_obj:'+demos single objective',mo_td3_demo_replica_only:'+demos replicas only',mo_td3_demo_categorical:'+demos categorical'};
 let ablationData=null;
 function drawAblation(topo){
   const res=ablationData[topo]; if(!res) return;

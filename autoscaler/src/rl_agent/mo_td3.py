@@ -39,12 +39,13 @@ Two ways to realise the discrete replica head (`replica_head`):
                  a = delta/3. Plain deterministic-policy gradient end to end - no discrete
                  extrapolation of the critic - and the usual way TD3 is applied to integer actions.
   "categorical"  7 logits with the straight-through relaxation described above. Kept as the
-                 `mo_td3_categorical` ablation: in this task it trained markedly less stably.
+                 `mo_td3_categorical` ablation: it scored worse on every evaluation set (one seed).
 
-Behaviour cloning on demonstrations (TD3+BC): demonstration episodes from the
-HPA/VPA/threshold controllers are mixed into the replay buffer, and the actor gets a
+Behaviour cloning on demonstrations (TD3+BC, optional - the `mo_td3_demo*` arms): demonstration
+episodes from the HPA/threshold controllers are mixed into the replay buffer, and the actor gets a
 decaying cloning term on them. This puts the search where reasonable behaviour lives
-and is itself ablated (`mo_td3_no_demo`).
+and is itself ablated: the `mo_td3_demo*` arms are the same models WITH demonstrations, and the
+study found them worse than pure RL (see the README).
 """
 
 import copy
