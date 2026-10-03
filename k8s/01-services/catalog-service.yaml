@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  namespace: autoscaler-poc
+  labels:
+    app: catalog-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: catalog-service
+  template:
+    metadata:
+      labels:
+        app: catalog-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: catalog-service
+          image: k8s-autoscaler/generic-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: SERVICE_NAME
+              value: "catalog-service"
+            - name: DOWNSTREAM
+              value: "http://inventory-service:8000|0.5,http://pricing-service:8000|0.5"
+            - name: WORK_MS
+              value: "15"
+            - name: MAX_CONCURRENCY
+              value: "4"
+            - name: JAEGER_OTLP_ENDPOINT
+              value: "http://jaeger.autoscaler-poc.svc.cluster.local:4318/v1/traces"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  namespace: autoscaler-poc
+  labels:
+    app: catalog-service
+spec:
+  selector:
+    app: catalog-service
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http

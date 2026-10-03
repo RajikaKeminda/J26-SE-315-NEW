@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Autoscaler Control Room — J26-SE-315</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --void:#0E131C; --panel:#151C29; --panel2:#111826; --line:#233047;
+  --ink:#E4EBF7; --dim:#7A89A4; --dimmer:#4E5C74;
+  --flow:#45D0C0; --warn:#F2A65A; --crit:#FF6B8A; --agent:#9B87F5;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --display:'Space Grotesk',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--void);color:var(--ink);font-family:var(--display);
+  min-height:100vh;padding:18px;
+  background-image:radial-gradient(circle at 12% 0%,rgba(69,208,192,.05),transparent 45%),
+                   radial-gradient(circle at 88% 8%,rgba(155,135,245,.05),transparent 45%);
+}
+.mono{font-family:var(--mono)}
+
+/* ---------- header ---------- */
+header{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:14px 18px;margin-bottom:14px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+}
+h1{font-size:15px;font-weight:700;letter-spacing:-.01em}
+h1 span{color:var(--dim);font-weight:400}
+.eyebrow{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;
+  color:var(--dimmer);text-transform:uppercase;margin-bottom:3px;
+}
+.spacer{flex:1}
+.pill{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  padding:5px 11px;border-radius:99px;border:1px solid var(--line);color:var(--dim);
+}
+.pill.on{color:var(--flow);border-color:rgba(69,208,192,.4);background:rgba(69,208,192,.08)}
+.pill.alert{color:var(--crit);border-color:rgba(255,107,138,.45);background:rgba(255,107,138,.1)}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--flow);
+     margin-right:6px;animation:blip 1.6s ease-in-out infinite;vertical-align:middle}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.25}}
+
+.stat{text-align:right;min-width:58px}
+.stat .k{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--dimmer);text-transform:uppercase}
+.stat .v{font-family:var(--mono);font-size:17px;font-weight:700;line-height:1.25}
+.v.ok{color:var(--flow)} .v.warn{color:var(--warn)} .v.crit{color:var(--crit)}
+
+/* ---------- layout ---------- */
+.grid{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 17px}
+.card h2{
+  font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--dim);font-weight:500;margin-bottom:4px;
+}
+.card .sub{font-size:11.5px;color:var(--dimmer);margin-bottom:12px}
+
+/* ---------- graph ---------- */
+#graph{width:100%;height:352px;display:block}
+.edge{stroke:var(--line);fill:none;transition:stroke .4s,stroke-width .4s}
+.edge.hot{stroke:var(--agent);opacity:.55}
+.edge.cp{stroke:var(--crit);opacity:.95}
+.pulse{fill:var(--crit)}
+.node-ring{fill:none;stroke:var(--line);stroke-width:1.5;transition:stroke .4s}
+.node-ring.ok{stroke:rgba(69,208,192,.55)}
+.node-ring.warn{stroke:var(--warn)}
+.node-ring.critical{stroke:var(--crit)}
+.node-ring.cp{stroke-width:2.5}
+.node-core{transition:fill .4s}
+.node-label{font-family:var(--mono);font-size:10px;fill:var(--ink)}
+.node-sub{font-family:var(--mono);font-size:8.5px;fill:var(--dim)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;
+        font-family:var(--mono);font-size:9.5px;color:var(--dimmer)}
+.legend i{display:inline-block;width:14px;height:2px;margin-right:5px;vertical-align:middle}
+
+/* ---------- feed ---------- */
+#feed{height:352px;overflow-y:auto;display:flex;flex-direction:column;gap:7px}
+#feed::-webkit-scrollbar{width:5px}
+#feed::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.ev{
+  display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-radius:7px;
+  background:var(--panel2);border-left:2px solid var(--line);
+  font-family:var(--mono);font-size:11px;animation:slide .3s ease-out;
+}
+@keyframes slide{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.ev.up{border-left-color:var(--flow)}
+.ev.down{border-left-color:var(--agent)}
+.ev.block{border-left-color:var(--warn)}
+.ev.brk{border-left-color:var(--crit);background:rgba(255,107,138,.09)}
+.ev .t{color:var(--dimmer);font-size:9.5px;min-width:30px}
+.ev .b{flex:1;color:var(--ink)}
+.ev .b em{font-style:normal;color:var(--dim)}
+.empty{color:var(--dimmer);font-family:var(--mono);font-size:11px;text-align:center;padding:26px}
+
+/* ---------- table ---------- */
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+th{
+  text-align:left;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--dimmer);font-weight:500;padding:0 8px 8px;border-bottom:1px solid var(--line);
+}
+td{padding:8px;border-bottom:1px solid rgba(35,48,71,.45)}
+tr:last-child td{border-bottom:none}
+.svc{display:flex;align-items:center;gap:7px}
+.tag{font-size:8px;letter-spacing:.08em;padding:1.5px 5px;border-radius:3px;
+     background:rgba(255,107,138,.15);color:var(--crit)}
+.tag.entry{background:rgba(69,208,192,.13);color:var(--flow)}
+.bar{height:4px;border-radius:2px;background:var(--line);overflow:hidden;min-width:56px}
+.bar i{display:block;height:100%;transition:width .5s ease,background .4s}
+.delta{font-weight:700}
+.delta.p{color:var(--flow)} .delta.n{color:var(--agent)} .delta.z{color:var(--dimmer)}
+
+/* ---------- chart ---------- */
+#chart{width:100%;height:132px;display:block}
+.gridline{stroke:var(--line);stroke-dasharray:2 4;opacity:.5}
+.slo-line{stroke:var(--crit);stroke-dasharray:4 3;opacity:.65}
+.area-lat{fill:rgba(69,208,192,.11)}
+.line-lat{stroke:var(--flow);fill:none;stroke-width:1.8}
+.line-cost{stroke:var(--agent);fill:none;stroke-width:1.5;opacity:.85}
+.axis{font-family:var(--mono);font-size:9px;fill:var(--dimmer)}
+
+/* ---------- controls / banners ---------- */
+.ctl{display:flex;gap:8px;align-items:center}
+.btn,select.btn{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  padding:5px 11px;border-radius:7px;border:1px solid var(--line);background:var(--panel2);
+  color:var(--ink);cursor:pointer;
+}
+.btn:hover{border-color:var(--flow)}
+.btn:focus-visible{outline:2px solid var(--flow);outline-offset:2px}
+#banner{display:none;margin-bottom:14px;padding:10px 16px;border-radius:10px;
+        font-family:var(--mono);font-size:11.5px;border:1px solid}
+#banner.stale{display:block;color:var(--warn);border-color:rgba(242,166,90,.5);background:rgba(242,166,90,.08)}
+#banner.err{display:block;color:var(--crit);border-color:rgba(255,107,138,.5);background:rgba(255,107,138,.08)}
+.best{color:var(--flow);font-weight:700}
+#pareto{width:100%;height:210px;display:block}
+.pt{stroke:var(--void);stroke-width:1}
+.pt.rl{fill:var(--agent)} .pt.baseline{fill:var(--warn)}
+.pt.front{stroke:var(--flow);stroke-width:2}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}#graph,#feed{height:300px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="eyebrow">J26-SE-315 · topology-aware DRL</div>
+    <h1>Autoscaler Control Room <span id="modeLabel">— demo</span></h1>
+  </div>
+  <div class="pill on" id="livePill"><span class="dot"></span>live</div>
+  <div class="pill" id="breakerPill">agent in control</div>
+  <div class="pill" id="policyPill">policy —</div>
+  <div class="pill" id="shadowPill" style="display:none">shadow · no scaling</div>
+  <div class="ctl">
+    <button class="btn" id="btnPause" type="button">pause</button>
+    <button class="btn" id="btnReset" type="button">reset</button>
+    <select class="btn" id="selScenario" aria-label="traffic scenario" style="display:none"></select>
+  </div>
+  <div class="spacer"></div>
+  <div class="stat"><div class="k">rps in</div><div class="v mono" id="sRps">—</div></div>
+  <div class="stat"><div class="k">critical path</div><div class="v mono" id="sLat">—</div></div>
+  <div class="stat"><div class="k">slo</div><div class="v mono" id="sSlo" style="color:var(--dim)">—</div></div>
+  <div class="stat"><div class="k">replicas</div><div class="v mono" id="sRep">—</div></div>
+  <div class="stat"><div class="k">cores</div><div class="v mono" id="sCost">—</div></div>
+</header>
+
+<div id="banner" role="status"></div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Service dependency graph</h2>
+    <div class="sub">Edge thickness is live latency pressure (EHG). The illuminated chain is the current critical path.</div>
+    <svg id="graph" viewBox="0 0 760 352" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="legend">
+      <span><i style="background:var(--crit)"></i>critical path</span>
+      <span><i style="background:var(--agent)"></i>latency pressure</span>
+      <span><i style="background:var(--line)"></i>dependency</span>
+      <span>ring colour = utilisation</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Decision feed</h2>
+    <div class="sub">Every scaling action, and every action the safety layer blocked.</div>
+    <div id="feed"><div class="empty">waiting for first tick…</div></div>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns:1.55fr 1fr">
+  <div class="card">
+    <h2>Services</h2>
+    <div class="sub">Live replica counts, utilisation and per-service latency.</div>
+    <table>
+      <thead><tr><th>service</th><th>replicas</th><th>utilisation</th><th>latency</th><th>rps</th><th>action</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Latency &amp; cost</h2>
+    <div class="sub">Critical-path latency against the SLO, with allocated cores.</div>
+    <svg id="chart" viewBox="0 0 420 132" preserveAspectRatio="none"></svg>
+    <div class="legend">
+      <span><i style="background:var(--flow)"></i>critical-path latency</span>
+      <span><i style="background:var(--agent)"></i>cores allocated</span>
+      <span><i style="background:var(--crit)"></i>slo</span>
+    </div>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns:1.55fr 1fr">
+  <div class="card">
+    <h2>Ablation study</h2>
+    <div class="sub">Every arm on identical topologies and traffic. Lower is better; best per column in green.</div>
+    <div id="ablation" class="empty">no results yet — run scripts/09_run_ablation.sh</div>
+  </div>
+  <div class="card">
+    <h2>Cost vs. latency trade-off</h2>
+    <div class="sub">Reward-weight sweep. Ringed points are Pareto-optimal.</div>
+    <svg id="pareto" viewBox="0 0 420 210" preserveAspectRatio="xMidYMid meet"><text class="axis" x="210" y="105" text-anchor="middle">no sweep yet — run scripts/12_run_pareto.sh</text></svg>
+    <div class="legend">
+      <span><i style="background:var(--agent)"></i>RL (W_COST sweep)</span>
+      <span><i style="background:var(--warn)"></i>HPA / static</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const SVGNS='http://www.w3.org/2000/svg';
+const el=(n,a={})=>{const e=document.createElementNS(SVGNS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+const $=id=>document.getElementById(id);
+let lastNodes={}, feedSeen=new Set(), lastBlocked={};
+
+/* ---------- layout the DAG into layers ---------- */
+function layout(nodes,edges,W,H){
+  const kids={},indeg={};
+  nodes.forEach(n=>{kids[n.id]=[];indeg[n.id]=0;});
+  edges.forEach(e=>{if(kids[e.source]){kids[e.source].push(e.target);indeg[e.target]=(indeg[e.target]||0)+1;}});
+
+  const depth={};
+  const roots=nodes.filter(n=>!indeg[n.id]).map(n=>n.id);
+  const start=roots.length?roots:[nodes[0].id];
+  start.forEach(r=>depth[r]=0);
+  let q=[...start],guard=0;
+  while(q.length&&guard++<500){
+    const cur=q.shift();
+    (kids[cur]||[]).forEach(k=>{
+      const d=(depth[cur]||0)+1;
+      if(depth[k]===undefined||d>depth[k]){depth[k]=d;q.push(k);}
+    });
+  }
+  nodes.forEach(n=>{if(depth[n.id]===undefined)depth[n.id]=0;});
+
+  const byLayer={};
+  nodes.forEach(n=>{(byLayer[depth[n.id]]=byLayer[depth[n.id]]||[]).push(n);});
+  const layers=Object.keys(byLayer).map(Number).sort((a,b)=>a-b);
+  const padX=78, padY=52;
+  const stepX=layers.length>1?(W-padX*2)/(layers.length-1):0;
+
+  const pos={};
+  layers.forEach((L,li)=>{
+    const group=byLayer[L];
+    const stepY=group.length>1?(H-padY*2)/(group.length-1):0;
+    group.forEach((n,i)=>{
+      pos[n.id]={x:padX+li*stepX, y:group.length>1?padY+i*stepY:H/2};
+    });
+  });
+  return pos;
+}
+
+/* ---------- render the dependency graph ---------- */
+function drawGraph(d){
+  const svg=$('graph'); svg.innerHTML='';
+  const W=760,H=352;
+  const pos=layout(d.nodes,d.edges,W,H);
+  const byId={}; d.nodes.forEach(n=>byId[n.id]=n);
+
+  // edges first so nodes sit on top
+  d.edges.forEach(e=>{
+    const a=pos[e.source], b=pos[e.target];
+    if(!a||!b)return;
+    const mx=(a.x+b.x)/2;
+    const path=`M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}`;
+    const w=1+e.latency_pressure*5;
+    const cls='edge '+(e.on_critical_path?'cp':(e.latency_pressure>0.35?'hot':''));
+    svg.appendChild(el('path',{d:path,class:cls,'stroke-width':e.on_critical_path?Math.max(2.4,w):w}));
+
+    if(e.on_critical_path){
+      const p=el('circle',{class:'pulse',r:3.2});
+      const anim=el('animateMotion',{dur:'1.9s',repeatCount:'indefinite',path:path});
+      p.appendChild(anim); svg.appendChild(p);
+    }
+  });
+
+  d.nodes.forEach(n=>{
+    const p=pos[n.id]; if(!p)return;
+    const g=el('g',{transform:`translate(${p.x},${p.y})`});
+
+    const fill=n.status==='critical'?'rgba(255,107,138,.16)'
+              :n.status==='warn'?'rgba(242,166,90,.14)':'rgba(69,208,192,.10)';
+    g.appendChild(el('circle',{r:23,class:'node-core',fill:fill}));
+    g.appendChild(el('circle',{r:23,class:`node-ring ${n.status}${n.on_critical_path?' cp':''}`}));
+
+    // utilisation arc
+    const frac=Math.max(0,Math.min(1,n.utilization));
+    if(frac>0.02){
+      const ang=-Math.PI/2+frac*2*Math.PI;
+      const large=frac>0.5?1:0;
+      const col=n.status==='critical'?'#FF6B8A':n.status==='warn'?'#F2A65A':'#45D0C0';
+      g.appendChild(el('path',{
+        d:`M0,-28 A28,28 0 ${large},1 ${28*Math.cos(ang)},${28*Math.sin(ang)}`,
+        fill:'none',stroke:col,'stroke-width':2.2,'stroke-linecap':'round',opacity:.85}));
+    }
+
+    const short=n.id.replace('-service','');
+    const t=el('text',{class:'node-label','text-anchor':'middle',y:2}); t.textContent=short;
+    g.appendChild(t);
+    const s=el('text',{class:'node-sub','text-anchor':'middle',y:14});
+    s.textContent=`${n.replicas}× ${n.latency_ms}ms`;
+    g.appendChild(s);
+
+    if(n.is_entry){
+      const e2=el('text',{class:'node-sub','text-anchor':'middle',y:-32,fill:'#45D0C0'});
+      e2.textContent='entry'; g.appendChild(e2);
+    }
+    svg.appendChild(g);
+  });
+}
+
+/* ---------- decision feed ---------- */
+function pushFeed(d){
+  const feed=$('feed');
+  const items=[];
+
+  if(d.breaker_open) items.push({cls:'brk',body:'<b>circuit breaker open</b> <em>— falling back to HPA rules until SLO recovers</em>'});
+
+  d.nodes.forEach(n=>{
+    const short=n.id.replace('-service','');
+    if(n.applied_delta>0) items.push({cls:'up',body:`scaled up <b>${short}</b> <em>→ ${n.replicas+n.applied_delta} replicas</em>`});
+    else if(n.applied_delta<0) items.push({cls:'down',body:`scaled down <b>${short}</b> <em>→ ${n.replicas+n.applied_delta} replicas</em>`});
+    else if(n.blocked_reason){
+      // only log a block when its reason changes - otherwise a service pinned at max floods the feed
+      if(lastBlocked[n.id]!==n.blocked_reason) items.push({cls:'block',body:`<b>${short}</b> <em>${n.blocked_reason}</em>`});
+    }
+    if(n.applied_delta!==0||!n.blocked_reason) lastBlocked[n.id]=null; else lastBlocked[n.id]=n.blocked_reason;
+  });
+
+  if(!items.length) return;
+  if(feed.querySelector('.empty')) feed.innerHTML='';
+
+  items.forEach(it=>{
+    const row=document.createElement('div');
+    row.className='ev '+it.cls;
+    row.innerHTML=`<span class="t">t${d.step}</span><span class="b">${it.body}</span>`;
+    feed.insertBefore(row,feed.firstChild);
+  });
+  while(feed.children.length>60) feed.removeChild(feed.lastChild);
+}
+
+/* ---------- service table ---------- */
+function drawTable(d){
+  const tb=$('tbody'); tb.innerHTML='';
+  d.nodes.forEach(n=>{
+    const tr=document.createElement('tr');
+    const pct=Math.min(100,n.utilization*100);
+    const col=n.status==='critical'?'var(--crit)':n.status==='warn'?'var(--warn)':'var(--flow)';
+    const dl=n.applied_delta;
+    const dcls=dl>0?'p':dl<0?'n':'z';
+    const dtxt=dl>0?`+${dl}`:dl<0?`${dl}`:'·';
+    tr.innerHTML=`
+      <td><div class="svc">${n.id.replace('-service','')}
+        ${n.is_entry?'<span class="tag entry">entry</span>':''}
+        ${n.on_critical_path?'<span class="tag">cp</span>':''}</div></td>
+      <td>${n.replicas}</td>
+      <td><div style="display:flex;align-items:center;gap:8px">
+          <div class="bar"><i style="width:${pct}%;background:${col}"></i></div>
+          <span style="color:${col}">${(n.utilization*100).toFixed(0)}%</span></div></td>
+      <td>${n.latency_ms}ms</td>
+      <td>${n.requests}</td>
+      <td class="delta ${dcls}">${dtxt}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* ---------- timeline chart ---------- */
+function drawChart(d){
+  const svg=$('chart'); svg.innerHTML='';
+  const W=420,H=132,pad={l:34,r:30,t:10,b:18};
+  const lat=d.history.latency||[], cost=d.history.cost||[];
+  if(lat.length<2) return;
+
+  const maxLat=Math.max(d.slo_ms*1.35,...lat);
+  const maxCost=Math.max(1,...cost);
+  const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  const X=i=>pad.l+(i/(lat.length-1))*iw;
+  const YL=v=>pad.t+ih-(v/maxLat)*ih;
+  const YC=v=>pad.t+ih-(v/maxCost)*ih;
+
+  [0,.5,1].forEach(f=>{
+    const y=pad.t+ih*f;
+    svg.appendChild(el('line',{x1:pad.l,y1:y,x2:W-pad.r,y2:y,class:'gridline'}));
+  });
+
+  const sloY=YL(d.slo_ms);
+  svg.appendChild(el('line',{x1:pad.l,y1:sloY,x2:W-pad.r,y2:sloY,class:'slo-line','stroke-width':1}));
+  const sl=el('text',{class:'axis',x:W-pad.r+3,y:sloY+3,fill:'#FF6B8A'});
+  sl.textContent='SLO'; svg.appendChild(sl);
+
+  let area=`M${X(0)},${pad.t+ih}`;
+  lat.forEach((v,i)=>area+=` L${X(i)},${YL(v)}`);
+  area+=` L${X(lat.length-1)},${pad.t+ih} Z`;
+  svg.appendChild(el('path',{d:area,class:'area-lat'}));
+
+  svg.appendChild(el('path',{d:'M'+lat.map((v,i)=>`${X(i)},${YL(v)}`).join(' L'),class:'line-lat'}));
+  if(cost.length>1)
+    svg.appendChild(el('path',{d:'M'+cost.map((v,i)=>`${X(i)},${YC(v)}`).join(' L'),class:'line-cost'}));
+
+  const a1=el('text',{class:'axis',x:4,y:pad.t+5}); a1.textContent=Math.round(maxLat)+'ms';
+  const a2=el('text',{class:'axis',x:4,y:pad.t+ih}); a2.textContent='0';
+  svg.appendChild(a1); svg.appendChild(a2);
+}
+
+/* ---------- header stats ---------- */
+function drawHeader(d){
+  $('modeLabel').textContent='— '+d.mode;
+  $('sRps').textContent=d.external_rps;
+  $('sRep').textContent=d.total_replicas;
+  $('sCost').textContent=d.total_cores;
+  $('sSlo').textContent=d.slo_ms+'ms';
+
+  const lat=$('sLat');
+  lat.textContent=d.critical_path_latency_ms+'ms';
+  lat.className='v mono '+(d.slo_breached?'crit':(d.critical_path_latency_ms>d.slo_ms*0.75?'warn':'ok'));
+
+  const bp=$('breakerPill');
+  if(d.breaker_open){bp.className='pill alert';bp.textContent='breaker open — HPA fallback';}
+  else{bp.className='pill';bp.textContent='agent in control';}
+}
+
+/* ---------- banner / pills ---------- */
+function drawStatus(d){
+  const b=$('banner');
+  if(d.stale){b.className='stale';b.textContent='Holding — not scaling: '+(d.stale_reason||'metrics unavailable')+
+      (d.metrics_age_s!=null?` (last good data ${d.metrics_age_s}s ago)`:'');}
+  else if(b.className==='stale'){b.className='';b.textContent='';}
+  $('policyPill').textContent='policy · '+d.policy;
+  $('shadowPill').style.display=d.shadow?'':'none';
+  $('btnPause').textContent=d.paused?'resume':'pause';
+}
+
+/* ---------- ablation + pareto panels ---------- */
+const ARM_LABEL={static:'static (no scaling)',hpa:'HPA baseline',rl_full:'RL full (dual-graph)',
+  rl_sdg_only:'RL SDG only',rl_no_topology:'RL no topology',rl_single_obj:'RL single-objective',rl_hpa_init:'RL HPA-warm-start (experimental)'};
+function drawAblation(res){
+  const keys=[['p95_latency','p95 ms',1],['slo_violation_rate','SLO viol',100],['mean_cost','cores',1],['composite_penalty','composite',1]];
+  const best={}; keys.forEach(([k])=>best[k]=Math.min(...Object.values(res).map(r=>r[k])));
+  let h='<table><thead><tr><th>arm</th>'+keys.map(k=>`<th>${k[1]}</th>`).join('')+'</tr></thead><tbody>';
+  Object.entries(res).forEach(([name,r])=>{
+    h+=`<tr><td>${ARM_LABEL[name]||name}</td>`+keys.map(([k,,m])=>{
+      const v=r[k]*m, txt=(k==='slo_violation_rate'?v.toFixed(1)+'%':v.toFixed(k==='composite_penalty'?3:(k==='mean_cost'?2:1)));
+      return `<td class="${r[k]===best[k]?'best':''}">${txt}</td>`;}).join('')+'</tr>';
+  });
+  $('ablation').className=''; $('ablation').innerHTML=h+'</tbody></table>';
+}
+function drawPareto(points){
+  const svg=$('pareto'); svg.innerHTML='';
+  const W=420,H=210,pad={l:40,r:14,t:12,b:30};
+  const xs=points.map(p=>p.mean_cost), ys=points.map(p=>p.p95_latency);
+  const x0=Math.min(...xs)*0.9, x1=Math.max(...xs)*1.05, y0=0, y1=Math.max(...ys)*1.08;
+  const X=v=>pad.l+(v-x0)/(x1-x0||1)*(W-pad.l-pad.r), Y=v=>H-pad.b-(v-y0)/(y1-y0||1)*(H-pad.t-pad.b);
+  [0,.5,1].forEach(f=>{const y=pad.t+(H-pad.t-pad.b)*f;svg.appendChild(el('line',{x1:pad.l,y1:y,x2:W-pad.r,y2:y,class:'gridline'}));});
+  const sloY=Y(150); svg.appendChild(el('line',{x1:pad.l,y1:sloY,x2:W-pad.r,y2:sloY,class:'slo-line'}));
+  points.forEach(p=>{
+    const c=el('circle',{cx:X(p.mean_cost),cy:Y(p.p95_latency),r:p.pareto_optimal?6:4.5,
+      class:`pt ${p.kind}${p.pareto_optimal?' front':''}`});
+    const t=el('title'); t.textContent=`${p.name}: p95 ${p.p95_latency.toFixed(0)}ms, ${p.mean_cost.toFixed(2)} cores, ${(p.slo_violation_rate*100).toFixed(1)}% violations`;
+    c.appendChild(t); svg.appendChild(c);
+  });
+  const ax=el('text',{class:'axis',x:W/2,y:H-8,'text-anchor':'middle'}); ax.textContent='mean cost (cores)'; svg.appendChild(ax);
+  const ay=el('text',{class:'axis',x:4,y:pad.t+4}); ay.textContent=Math.round(y1)+'ms p95'; svg.appendChild(ay);
+}
+async function loadStatic(){
+  try{const r=await (await fetch('/api/results')).json(); if(r.available) drawAblation(r.results);}catch(e){}
+  try{const r=await (await fetch('/api/pareto')).json(); if(r.available) drawPareto(r.results.points);}catch(e){}
+}
+
+/* ---------- controls ---------- */
+let paused=false;
+async function post(url){try{await fetch(url,{method:'POST'});}catch(e){}}
+$('btnPause').onclick=async()=>{await post(paused?'/api/resume':'/api/pause');paused=!paused;$('btnPause').textContent=paused?'resume':'pause';};
+$('btnReset').onclick=async()=>{await post('/api/reset');feedSeen=new Set();lastBlocked={};$('feed').innerHTML='<div class="empty">waiting for first tick…</div>';};
+async function initControls(){
+  try{
+    const s=await (await fetch('/api/state')).json();
+    paused=s.paused; $('btnPause').textContent=paused?'resume':'pause';
+    if(s.scenarios&&s.scenarios.length){
+      const sel=$('selScenario'); sel.style.display='';
+      sel.innerHTML=s.scenarios.map(n=>`<option ${n===s.scenario?'selected':''}>${n}</option>`).join('');
+      sel.onchange=()=>post('/api/scenario/'+sel.value);
+    }
+    if(s.error){const b=$('banner');b.className='err';b.textContent='engine error: '+s.error;}
+  }catch(e){}
+}
+
+/* ---------- socket ---------- */
+function connect(){
+  const proto=location.protocol==='https:'?'wss':'ws';
+  const ws=new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage=e=>{
+    const d=JSON.parse(e.data);
+    if(!d.nodes) return;
+    paused=!!d.paused;
+    drawHeader(d); drawStatus(d); drawGraph(d); pushFeed(d); drawTable(d); drawChart(d);
+  };
+  ws.onclose=()=>{
+    const p=$('livePill'); p.className='pill alert'; p.textContent='disconnected — retrying';
+    setTimeout(connect,2500);
+  };
+  ws.onopen=()=>{
+    const p=$('livePill'); p.className='pill on'; p.innerHTML='<span class="dot"></span>live';
+  };
+}
+initControls(); loadStatic(); connect();
+</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+# Jaeger "all-in-one" - collector, storage (in-memory), and query UI in a
+# single deployment. Fine for a project/POC; production Jaeger would split
+# these into separate components with persistent storage (Elasticsearch/
+# Cassandra) - noted here as an extension point, not required for this project.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: autoscaler-poc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      containers:
+        - name: jaeger
+          image: jaegertracing/all-in-one:1.60
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: COLLECTOR_OTLP_ENABLED
+              value: "true"
+          ports:
+            - containerPort: 16686   # Jaeger Query UI + HTTP API
+              name: query
+            - containerPort: 4318    # OTLP HTTP receiver (what our services export to)
+              name: otlp-http
+            - containerPort: 4317    # OTLP gRPC receiver
+              name: otlp-grpc
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: autoscaler-poc
+spec:
+  selector:
+    app: jaeger
+  ports:
+    - name: query
+      port: 16686
+      targetPort: 16686
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
