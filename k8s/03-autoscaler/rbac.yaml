@@ -1,0 +1,34 @@
+# Least-privilege identity for the in-cluster autoscaler: it may read
+# Deployments and patch their scale subresource, in THIS namespace only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: autoscaler
+  namespace: autoscaler-poc
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: autoscaler
+  namespace: autoscaler-poc
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: autoscaler
+  namespace: autoscaler-poc
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: autoscaler
+subjects:
+  - kind: ServiceAccount
+    name: autoscaler
+    namespace: autoscaler-poc

@@ -1,0 +1,7 @@
+torch>=2.8
+numpy>=2.0
+fastapi>=0.115
+uvicorn[standard]>=0.32
+websockets>=13.0
+requests>=2.31
+kubernetes>=31.0

@@ -1,0 +1,12 @@
+# Static scrape config for the docker-compose stack (the k8s stack uses pod discovery).
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: services
+    static_configs:
+      - {targets: ['gateway-service:8000'],   labels: {service: gateway-service}}
+      - {targets: ['catalog-service:8000'],   labels: {service: catalog-service}}
+      - {targets: ['auth-service:8000'],      labels: {service: auth-service}}
+      - {targets: ['inventory-service:8000'], labels: {service: inventory-service}}
+      - {targets: ['pricing-service:8000'],   labels: {service: pricing-service}}
+      - {targets: ['user-service:8000'],      labels: {service: user-service}}

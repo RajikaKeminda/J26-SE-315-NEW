@@ -1,0 +1,65 @@
+# Whole stack WITHOUT Kubernetes: the six services, Prometheus, Jaeger and the
+# dashboard (demo mode - the live autoscaler needs a Kubernetes API to scale).
+#
+#   docker compose up --build
+#   open http://localhost:8080      dashboard (simulator-driven)
+#   open http://localhost:16686     Jaeger UI
+#   open http://localhost:9090      Prometheus
+#   python traffic-generator/generate_traffic.py --url http://localhost:8000 --pattern burst
+#
+
+x-service: &service
+  build: ./services/generic-service
+  image: k8s-autoscaler/generic-service:latest
+  depends_on: [jaeger]
+  environment: &service-env
+    WORK_MS: "15"
+    MAX_CONCURRENCY: "4"
+    JAEGER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
+
+services:
+  gateway-service:
+    <<: *service
+    ports: ["8000:8000"]
+    environment:
+      <<: *service-env
+      SERVICE_NAME: gateway-service
+      DOWNSTREAM: "http://catalog-service:8000|0.6,http://auth-service:8000|0.4"
+  catalog-service:
+    <<: *service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: catalog-service
+      DOWNSTREAM: "http://inventory-service:8000|0.5,http://pricing-service:8000|0.5"
+  auth-service:
+    <<: *service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: auth-service
+      DOWNSTREAM: "http://user-service:8000|1.0"
+  inventory-service:
+    <<: *service
+    environment: {<<: *service-env, SERVICE_NAME: inventory-service, DOWNSTREAM: ""}
+  pricing-service:
+    <<: *service
+    environment: {<<: *service-env, SERVICE_NAME: pricing-service, DOWNSTREAM: ""}
+  user-service:
+    <<: *service
+    environment: {<<: *service-env, SERVICE_NAME: user-service, DOWNSTREAM: ""}
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment: {COLLECTOR_OTLP_ENABLED: "true"}
+    ports: ["16686:16686"]
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=6h"]
+    volumes: ["./deploy/compose/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+
+  dashboard:
+    build: ./autoscaler
+    image: k8s-autoscaler/autoscaler:latest
+    command: ["--mode", "demo", "--port", "8080"]
+    ports: ["8080:8080"]
