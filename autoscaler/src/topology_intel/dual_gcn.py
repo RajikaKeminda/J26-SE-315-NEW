@@ -1,16 +1,20 @@
 """
 dual_gcn.py
 
-Two-branch Graph Convolutional Network: one branch reads the STRUCTURAL
-graph (SDG), one reads the DYNAMIC latency graph (EHG). Their per-node
-outputs are concatenated, giving each service an embedding that encodes
-both "who am I connected to" and "where is the pain flowing right now".
+Two-branch Graph Convolutional Network: one branch reads the STRUCTURAL graph
+(SDG), one reads the DYNAMIC latency graph (EHG). Their per-node outputs are
+concatenated, giving each service an embedding that encodes both "who am I
+connected to" and "where is the latency pain flowing right now".
 
-A GCN layer is just: average each node's features with its neighbours'
-(weighted by the normalized adjacency), then apply a shared linear layer.
-Because that shared linear layer is applied per-node, the SAME weights
-work for any number of nodes - this is what makes the whole model
-topology-size-agnostic.
+Per the proposal each branch is a 2-layer GCN with 128 hidden units, and the two
+32-d branch outputs form a 64-d embedding (EMBEDDING_DIM).
+
+A GCN layer is: average each node's features with its neighbours' (weighted by the
+normalised adjacency), then apply a shared linear layer. Because that linear layer
+is shared across nodes, the SAME weights work for any number of nodes - which is
+what makes the whole model topology-size-agnostic. Inputs may be batched and padded:
+X (B,N,F), A (B,N,N); padded nodes have all-zero adjacency rows and are masked out
+by the caller. Unbatched (N,F)/(N,N) inputs are accepted too.
 """
 
 import torch
@@ -23,8 +27,7 @@ class GCNLayer(nn.Module):
         self.linear = nn.Linear(in_dim, out_dim)
 
     def forward(self, X: torch.Tensor, A_hat: torch.Tensor) -> torch.Tensor:
-        # X: (..., N, in_dim), A_hat: (N, N)
-        return self.linear(A_hat @ X)
+        return self.linear(torch.matmul(A_hat, X))
 
 
 class GCNBranch(nn.Module):
@@ -42,12 +45,13 @@ class GCNBranch(nn.Module):
 
 class DualGCN(nn.Module):
     """
-    Returns (N, 2 * embed_dim) node embeddings: [structural | latency-flow].
+    Returns (..., N, out_dim) node embeddings: [structural | latency-flow].
 
-    Set use_ehg=False to run structure-only - used by the ablation study to
-    measure how much the EHG branch actually contributes.
-    Set use_topology=False to bypass graphs entirely (per-node MLP only) -
-    used by the "no topology awareness" ablation arm.
+    Ablation switches:
+      use_ehg=False       structure-only (single SDG branch, same total embedding size)
+      use_topology=False  no message passing at all: each node encoded in isolation by an
+                          MLP of matching width, so the ablation changes ONLY whether
+                          neighbours are visible, not model capacity.
     """
 
     def __init__(self, in_dim: int, hidden_dim: int, embed_dim: int,
@@ -55,25 +59,27 @@ class DualGCN(nn.Module):
         super().__init__()
         self.use_ehg = use_ehg
         self.use_topology = use_topology
+        self.out_dim = embed_dim * 2          # constant across ablation arms
 
         if use_topology:
-            self.sdg_branch = GCNBranch(in_dim, hidden_dim, embed_dim)
+            branch_dim = embed_dim if use_ehg else embed_dim * 2
+            self.sdg_branch = GCNBranch(in_dim, hidden_dim, branch_dim)
             if use_ehg:
-                self.ehg_branch = GCNBranch(in_dim, hidden_dim, embed_dim)
+                self.ehg_branch = GCNBranch(in_dim, hidden_dim, branch_dim)
         else:
-            # no message passing at all: each node encoded in isolation
             self.plain = nn.Sequential(
                 nn.Linear(in_dim, hidden_dim), nn.ReLU(),
-                nn.Linear(hidden_dim, embed_dim),
+                nn.Linear(hidden_dim, self.out_dim),
             )
 
-        self.out_dim = embed_dim * (2 if (use_topology and use_ehg) else 1)
-
     def forward(self, X, A_sdg, A_ehg):
+        squeeze = X.dim() == 2
+        if squeeze:
+            X, A_sdg, A_ehg = X.unsqueeze(0), A_sdg.unsqueeze(0), A_ehg.unsqueeze(0)
         if not self.use_topology:
-            return self.plain(X)
-        h_sdg = self.sdg_branch(X, A_sdg)
-        if not self.use_ehg:
-            return h_sdg
-        h_ehg = self.ehg_branch(X, A_ehg)
-        return torch.cat([h_sdg, h_ehg], dim=-1)
+            h = self.plain(X)
+        else:
+            h = self.sdg_branch(X, A_sdg)
+            if self.use_ehg:
+                h = torch.cat([h, self.ehg_branch(X, A_ehg)], dim=-1)
+        return h.squeeze(0) if squeeze else h

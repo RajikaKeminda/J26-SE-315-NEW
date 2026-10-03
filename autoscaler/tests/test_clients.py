@@ -40,6 +40,45 @@ def test_prometheus_empty_result_is_zero_traffic_not_failure(monkeypatch):
     assert m["a"] == {"requests": 0.0, "latency_ms": 0.0, "ok": True}
 
 
+def _vec(by_service):
+    return _Resp({"status": "success", "data": {"result": [
+        {"metric": {"service": s}, "value": [0, str(v)]} for s, v in by_service.items()]}})
+
+
+def test_prometheus_bulk_collect_parses_every_signal(monkeypatch):
+    """One query per signal for ALL services; absent series -> 0, NaN dropped."""
+    seen = []
+
+    def fake_get(url, params=None, timeout=None):
+        q = params["query"]
+        seen.append(q)
+        if "http_requests_total" in q:
+            return _vec({"gw": 20.0, "inv": 10.0})
+        if "quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket" in q:
+            return _vec({"gw": 0.25, "inv": "NaN"})
+        if "service_own_duration_seconds_sum" in q:
+            return _vec({"gw": 0.03})
+        if "process_cpu_seconds_total" in q:
+            return _vec({"gw": 0.5, "inv": 0.2})
+        if "process_resident_memory_bytes" in q and "count" not in q:
+            return _vec({"gw": 60 * 2**20})
+        return _vec({})
+    monkeypatch.setattr(requests, "get", fake_get)
+    out = prometheus_client.collect("20s")
+    assert set(out) == {"gw", "inv"}
+    assert out["gw"]["requests"] == 20.0 and out["gw"]["incl_p95_ms"] == pytest.approx(250.0)
+    assert out["gw"]["own_latency_ms"] == pytest.approx(30.0) and out["gw"]["cpu_cores"] == 0.5
+    assert out["gw"]["mem_mb"] == pytest.approx(60.0)
+    assert out["inv"]["incl_p95_ms"] == 0.0, "NaN (no traffic) must not poison the numbers"
+    assert len(seen) == 12 and all("[20s]" in q for q in seen if "rate(" in q)
+
+
+def test_prometheus_collect_raises_on_outage(monkeypatch):
+    monkeypatch.setattr(requests, "get", lambda *a, **k: (_ for _ in ()).throw(requests.ConnectionError("x")))
+    with pytest.raises(prometheus_client.QueryFailed):
+        prometheus_client.collect()
+
+
 def test_prometheus_nan_latency_is_zero(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *a, **k: _prom_ok("NaN"))
     assert prometheus_client.get_avg_latency_ms("a") == 0.0
@@ -114,6 +153,19 @@ def test_per_service_latency_falls_back(monkeypatch):
     assert out == {"x": 20.0, "y": 7.0}
 
 
+def test_window_aggregation_gives_edge_frequency_and_latency_percentiles():
+    procs = {"p1": "gw", "p2": "cat"}
+    traces = []
+    for i in range(10):                      # gw -> cat, callee request span lasts (i+1) ms
+        traces.append(_trace([_span("g", "p1"), _span("gc", "p1", "g"),
+                              _span("c", "p2", "gc", dur=(i + 1) * 1000)], procs))
+    edges = jaeger_client.aggregate_window(traces)
+    assert set(edges) == {("gw", "cat")}
+    e = edges[("gw", "cat")]
+    assert e["count"] == 10 and e["p50_ms"] == pytest.approx(6.0, abs=1.0) and e["p95_ms"] >= 9.0
+    assert jaeger_client.aggregate_window([]) == {}
+
+
 def test_fetch_traces_swallows_network_errors(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *a, **k: (_ for _ in ()).throw(requests.Timeout()))
     assert jaeger_client.fetch_recent_traces("x", 30, 5) == []
@@ -121,24 +173,38 @@ def test_fetch_traces_swallows_network_errors(monkeypatch):
 
 
 # ---------------------------------------------------------------- kubernetes
+class _Container:
+    def __init__(self, name, cpu, mem):
+        res = {"cpu": cpu, "memory": mem}
+        self.name = name
+        self.resources = type("R", (), {"limits": dict(res), "requests": dict(res)})()
+
+
 class _Dep:
-    def __init__(self, n):
-        self.spec = type("S", (), {"replicas": n})()
-        self.status = type("St", (), {"replicas": n})()
+    def __init__(self, name, n, ready=None, cpu="250m", mem="128Mi"):
+        self.spec = type("S", (), {"replicas": n, "template": type("T", (), {"spec": type("P", (), {
+            "containers": [_Container(name, cpu, mem)]})()})()})()
+        self.status = type("St", (), {"replicas": n, "ready_replicas": n if ready is None else ready})()
 
 
 class _FakeApps:
     def __init__(self, replicas):
-        self.replicas, self.patches = dict(replicas), []
+        self.deps = {k: _Dep(k, v) for k, v in replicas.items()}
+        self.patches, self.template_patches = [], []
 
     def read_namespaced_deployment(self, name, namespace):
-        if name not in self.replicas:
+        if name not in self.deps:
             raise k8s_client.client.exceptions.ApiException(status=404, reason="Not Found")
-        return _Dep(self.replicas[name])
+        return self.deps[name]
 
     def patch_namespaced_deployment_scale(self, name, namespace, body):
         self.patches.append((name, body))
-        self.replicas[name] = body["spec"]["replicas"]
+        self.deps[name].spec.replicas = body["spec"]["replicas"]
+
+    def patch_namespaced_deployment(self, name, namespace, body):
+        self.template_patches.append((name, body))
+        c = body["spec"]["template"]["spec"]["containers"][0]
+        self.deps[name].spec.template.spec.containers[0].resources.limits = dict(c["resources"]["limits"])
 
 
 @pytest.fixture
@@ -152,14 +218,48 @@ def fake_k8s(monkeypatch):
 def test_k8s_scale_up_down_and_clamping(fake_k8s):
     assert k8s_client.scale_replicas("a", +1) == 3
     assert k8s_client.scale_replicas("a", -1) == 2
+    assert k8s_client.scale_replicas("a", +3) == 5                      # the +-3 action space
     assert k8s_client.scale_replicas("b", +1) == config.MAX_REPLICAS      # clamped
     assert k8s_client.scale_replicas("c", -1) == config.MIN_REPLICAS      # clamped
-    assert [p[0] for p in fake_k8s.patches] == ["a", "a"]                 # clamped = no patch
+    assert [p[0] for p in fake_k8s.patches] == ["a", "a", "a"]            # clamped = no patch
+
+
+def test_k8s_state_reads_replicas_readiness_and_limits(fake_k8s):
+    fake_k8s.deps["a"] = _Dep("a", 3, ready=1, cpu="500m", mem="256Mi")
+    st = k8s_client.get_state(["a", "missing"])
+    assert st == {"a": {"replicas": 3, "ready": 1, "cpu": 0.5, "mem": 256.0}}   # missing is omitted
 
 
 def test_k8s_counts_omit_unreadable_deployments(fake_k8s):
     counts = k8s_client.get_replica_counts(["a", "missing"])
     assert counts == {"a": 2}          # NOT {"missing": 0}: caller must notice and hold
+
+
+def test_k8s_set_resources_patches_template_with_requests_equal_limits(fake_k8s):
+    assert k8s_client.set_resources("a", 0.75, 192) is True
+    name, body = fake_k8s.template_patches[-1]
+    c = body["spec"]["template"]["spec"]["containers"][0]
+    assert name == "a" and c["name"] == "a"
+    assert c["resources"]["requests"] == c["resources"]["limits"] == {"cpu": "750m", "memory": "192Mi"}
+    assert k8s_client.set_resources("a", 0.75, 192) is False             # no-op: no second rollout
+    assert len(fake_k8s.template_patches) == 1
+
+
+def test_k8s_apply_action_combines_scale_and_resize(fake_k8s):
+    done = k8s_client.apply_action("a", {"dr": +2, "cpu": 1.0, "mem": 128.0})
+    assert done == {"scaled": True, "resized": True}
+    assert fake_k8s.deps["a"].spec.replicas == 4
+    assert k8s_client.apply_action("a", {"dr": 0, "cpu": 1.0, "mem": 128.0}) == {"scaled": False, "resized": False}
+
+
+@pytest.mark.parametrize("q,expected", [("250m", 0.25), ("1", 1.0), ("2", 2.0), (0.5, 0.5), (None, 0.0)])
+def test_parse_cpu(q, expected):
+    assert k8s_client.parse_cpu(q) == expected
+
+
+@pytest.mark.parametrize("q,expected", [("128Mi", 128), ("1Gi", 1024), ("134217728", 128), ("512Ki", 0.5), (None, 0)])
+def test_parse_mem(q, expected):
+    assert k8s_client.parse_mem_mb(q) == pytest.approx(expected)
 
 
 def test_k8s_uses_incluster_when_in_pod(monkeypatch):
@@ -177,13 +277,15 @@ def test_k8s_uses_incluster_when_in_pod(monkeypatch):
 # -------------------------------------------------------------------- config
 def test_config_env_overrides(monkeypatch):
     monkeypatch.setenv("PROMETHEUS_URL", "http://prom:9090")
-    monkeypatch.setenv("MAX_CONCURRENCY_PER_REPLICA", "1.5")
+    monkeypatch.setenv("STEP_SECONDS", "5")
     monkeypatch.setenv("AUTODISCOVER_TOPOLOGY", "1")
+    monkeypatch.setenv("SLO_LATENCY_MS", "400")
     try:
         c = importlib.reload(config)
         assert c.PROMETHEUS_URL == "http://prom:9090"
-        assert c.MAX_CONCURRENCY_PER_REPLICA == 1.5
+        assert c.STEP_SECONDS == 5.0
         assert c.AUTODISCOVER_TOPOLOGY is True
+        assert c.slo_for_depth(3) == 400.0
     finally:
         monkeypatch.undo()
         importlib.reload(config)
