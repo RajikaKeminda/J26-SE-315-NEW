@@ -2,7 +2,7 @@
 PY ?= python3
 KIND_CLUSTER ?= autoscaler
 
-.PHONY: help install test train ablate pareto dashboard docker-build kind-up kind-load deploy e2e kind-down compose-up compose-down
+.PHONY: help install test train ablate pareto report reproduce calibrate live manifests dashboard docker-build kind-up kind-load deploy e2e kind-down compose-up compose-down
 
 help:            ## show this help
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -13,14 +13,29 @@ install:         ## install autoscaler + test dependencies
 test:            ## unit + integration tests (no cluster needed)
 	cd autoscaler && $(PY) -m pytest -q
 
-train:           ## train all four ablation arms on the simulator
+train:           ## train the MO-TD3 agent and every ablation arm on the calibrated simulator
 	bash scripts/06_train_all_arms.sh
 
-ablate:          ## evaluate every arm + HPA/static on identical traffic
+ablate:          ## evaluate every controller on identical traffic (6-service + unseen 14-service app)
 	bash scripts/09_run_ablation.sh
 
-pareto:          ## reward-weight sweep -> cost/latency Pareto front
+pareto:          ## preference sweep of ONE MO-TD3 network vs the HPA tuning sweep -> Pareto fronts
 	bash scripts/12_run_pareto.sh
+
+report:          ## regenerate the figures and the README result tables from results/*.json
+	cd autoscaler && $(PY) -m src.evaluation.plots && $(PY) -m src.evaluation.report
+
+reproduce:       ## re-create every simulator result from scratch (train, evaluate, Pareto, figures, README)
+	bash scripts/17_reproduce_results.sh
+
+calibrate:       ## re-measure the real service on your cluster and re-fit the simulator
+	bash scripts/13_calibrate.sh
+
+live:            ## real-cluster head-to-head: static / tuned HPA / MO-TD3 with in-cluster load
+	bash scripts/15_live_experiment.sh
+
+manifests:       ## regenerate k8s/01-services from autoscaler/src/topologies.py
+	$(PY) scripts/gen_manifests.py
 
 dashboard:       ## demo-mode dashboard on :8080 (no cluster)
 	bash scripts/10_run_dashboard.sh
