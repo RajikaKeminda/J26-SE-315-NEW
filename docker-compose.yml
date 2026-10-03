@@ -5,16 +5,19 @@
 #   open http://localhost:8080      dashboard (simulator-driven)
 #   open http://localhost:16686     Jaeger UI
 #   open http://localhost:9090      Prometheus
-#   python traffic-generator/generate_traffic.py --url http://localhost:8000 --pattern burst
+#   (cd autoscaler && PYTHONPATH=. python ../traffic-generator/generate_traffic.py --pattern burst)
 #
 
 x-service: &service
   build: ./services/generic-service
   image: k8s-autoscaler/generic-service:latest
   depends_on: [jaeger]
+  cpus: 0.25            # same allocation as the Kubernetes manifests: capacity is CPU-limit-bound
+  mem_limit: 128m
   environment: &service-env
     WORK_MS: "15"
     MAX_CONCURRENCY: "4"
+    TRACE_SAMPLE_RATIO: "0.25"
     JAEGER_OTLP_ENDPOINT: http://jaeger:4318/v1/traces
 
 services:

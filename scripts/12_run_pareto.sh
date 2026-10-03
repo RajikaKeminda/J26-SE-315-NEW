@@ -1,10 +1,11 @@
 #!/bin/bash
-# Reward-weight sweep: re-trains rl_full at several W_COST values and plots each
-# against HPA and static on the (latency, cost, SLO-violation) Pareto front.
-# ~1.5 min per weight on a laptop CPU. Writes autoscaler/results/pareto_results.json.
+# Preference sweep: ONE trained MO-TD3 network evaluated at 15 preferences over
+# (SLO, cost, balance), against the HPA tuning sweep (CPU size x utilisation target), VPA,
+# threshold and static. Reports the Pareto-optimal set and the hypervolume of each front.
+# Writes autoscaler/results/pareto_results.json (served by the dashboard).
 #
-#   bash scripts/12_run_pareto.sh                    # defaults (55 iterations)
-#   bash scripts/12_run_pareto.sh --iterations 100
+#   bash scripts/12_run_pareto.sh                    # defaults (16 episodes per point)
+#   bash scripts/12_run_pareto.sh --episodes 32
 set -e
 cd "$(dirname "$0")/../autoscaler"
 python3 -m src.evaluation.pareto "$@"

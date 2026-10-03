@@ -4,8 +4,10 @@
 set -e
 NAMESPACE="autoscaler-poc"
 
-echo "Waiting for all deployments in '$NAMESPACE' to become available (timeout 180s)..."
-kubectl wait --for=condition=available --timeout=180s deployment --all -n "$NAMESPACE"
+# The first deploy pulls the Prometheus and Jaeger images, which can take minutes on a slow link.
+TIMEOUT="${VERIFY_TIMEOUT:-600}"
+echo "Waiting for all deployments in '$NAMESPACE' to become available (timeout ${TIMEOUT}s)..."
+kubectl wait --for=condition=available --timeout="${TIMEOUT}s" deployment --all -n "$NAMESPACE"
 
 echo
 echo "=== Pods ==="

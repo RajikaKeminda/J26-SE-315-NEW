@@ -74,7 +74,7 @@ bash scripts/04_verify_deployment.sh
 # new terminal (wsl -d Ubuntu, or just open another Ubuntu terminal tab):
 bash scripts/05_port_forward.sh
 # back in the first terminal:
-bash scripts/06_train_models.sh
+bash scripts/06_train_all_arms.sh
 bash scripts/07_run_traffic.sh burst 180 20
 bash scripts/08_run_autoscaler.sh --shadow --iterations 20
 ```
@@ -163,7 +163,7 @@ it's more verbose but bulletproof.)
 ### 7. Back in your first window: train the models
 
 ```powershell
-.\scripts\windows\06_train_models.ps1
+.\scripts\windows\06_train_all_arms.ps1
 ```
 Doesn't need the cluster - pure local training against the calibrated
 simulator, same as on Linux.

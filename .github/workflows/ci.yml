@@ -21,9 +21,17 @@ jobs:
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r autoscaler/requirements-dev.txt
+      - name: Lint (unused imports / names / syntax)
+        working-directory: autoscaler
+        run: python -m pyflakes src tests ../traffic-generator ../services ../scripts/gen_manifests.py
       - name: Run tests
         working-directory: autoscaler
         run: python -m pytest -q
+      - name: README tables match the committed result files
+        working-directory: autoscaler
+        run: python -m src.evaluation.report --check
+      - name: Generated manifests match the topology
+        run: python scripts/gen_manifests.py --check
 
   images:
     name: docker images + compose
@@ -37,7 +45,8 @@ jobs:
           docker run -d --name dash -p 8080:8080 k8s-autoscaler/autoscaler:latest
           for i in $(seq 1 30); do curl -fsS localhost:8080/healthz && break; sleep 2; done
           curl -fsS localhost:8080/api/state
-          curl -fsS localhost:8080/api/results | grep -q rl_full
+          curl -fsS localhost:8080/api/results | grep -q mo_td3_full
+          curl -fsS localhost:8080/api/calibration | grep -q fit_report
           docker rm -f dash
       - run: docker compose config -q
 
@@ -45,7 +54,7 @@ jobs:
     name: end-to-end on kind
     needs: [test, images]
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,9 +65,13 @@ jobs:
         with:
           cluster_name: autoscaler
       - run: bash scripts/02_load_image_kind.sh autoscaler
-      - run: bash scripts/03_deploy_all.sh
+      # A CI runner has ~4 vCPUs: deploy ONE replica per service and cap the autoscaler's budget, or the
+      # pods would sit Pending (12 pods x 0.25 core + kind's control plane > 4 cores).
+      - name: Generate small-runner manifests
+        run: python3 scripts/gen_manifests.py --out /tmp/svc --replicas 1
+      - run: SERVICES_DIR=/tmp/svc BUDGET_CORES=3 bash scripts/03_deploy_all.sh
       - run: bash scripts/04_verify_deployment.sh
-      - name: Smoke test (traffic -> Prometheus/Jaeger -> autoscaler -> scaling)
+      - name: Smoke test (traffic -> Prometheus/Jaeger -> autoscaler -> scaling/resizing)
         run: bash scripts/14_e2e_smoke.sh
       - name: Dump cluster state on failure
         if: failure()

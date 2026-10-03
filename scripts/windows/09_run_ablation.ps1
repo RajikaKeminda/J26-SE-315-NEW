@@ -1,4 +1,4 @@
-# Head-to-head comparison of every arm plus HPA and static baselines.
-param([int]$Episodes = 20)
+# Head-to-head comparison of every controller (baselines + every trained MO-TD3 arm).
+param([int]$Episodes = 24)
 Set-Location "$PSScriptRoot\..\..\autoscaler"
 python -m src.evaluation.evaluate --episodes $Episodes

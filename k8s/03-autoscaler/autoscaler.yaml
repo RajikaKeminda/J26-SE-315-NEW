@@ -1,8 +1,10 @@
-# The autoscaler + control-room dashboard, running in-cluster.
+# The MO-TD3 autoscaler + control-room dashboard, running in-cluster.
 #
-# AUTOSCALER_SHADOW=1 observes and logs decisions without scaling anything.
-# Set it to "0" (the default below) to let the agent actually scale the six
-# demo services. Exactly ONE replica: two controllers would fight each other.
+# AUTOSCALER_SHADOW=1 observes and logs decisions without changing anything.
+# Set it to "0" (the default below) to let the agent actually scale and resize the six
+# demo services. AUTOSCALER_CONTROLLER picks the controller (mo_td3 | hpa | vpa |
+# threshold | static) - it can also be switched at run time from the dashboard.
+# Exactly ONE replica: two controllers would fight each other.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -44,9 +46,14 @@ spec:
               value: "1"
             - name: POLL_INTERVAL_SECONDS
               value: "10"
-            # override after running traffic-generator/calibrate.py on your cluster
-            # - name: MAX_CONCURRENCY_PER_REPLICA
-            #   value: "2.0"
+            - name: AUTOSCALER_CONTROLLER
+              value: "mo_td3"
+            # Live safety cap on total provisioned cost: what the cluster can actually schedule.
+            # (kind in a 4 GiB / 8-CPU Docker VM has ~6 cores free after the control plane.)
+            - name: CLUSTER_BUDGET_CORES
+              value: "6"
+            - name: METRIC_WINDOW
+              value: "10s"
           resources:
             requests:
               cpu: "100m"

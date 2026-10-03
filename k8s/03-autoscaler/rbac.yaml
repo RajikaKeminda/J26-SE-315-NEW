@@ -1,5 +1,8 @@
-# Least-privilege identity for the in-cluster autoscaler: it may read
-# Deployments and patch their scale subresource, in THIS namespace only.
+# Least-privilege identity for the in-cluster autoscaler, in THIS namespace only:
+#   - read Deployments (state),
+#   - patch the scale subresource (replica changes),
+#   - patch Deployments (CPU/memory resource changes, which roll the pods).
+# Nothing else: no pods, no secrets, nothing cluster-scoped.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -14,7 +17,7 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
     verbs: ["get", "patch", "update"]

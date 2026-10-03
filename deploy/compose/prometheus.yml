@@ -1,6 +1,6 @@
 # Static scrape config for the docker-compose stack (the k8s stack uses pod discovery).
 global:
-  scrape_interval: 5s
+  scrape_interval: 2s
 scrape_configs:
   - job_name: services
     static_configs:

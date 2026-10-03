@@ -19,6 +19,9 @@ RUN pip install torch --index-url ${TORCH_INDEX} \
 COPY src ./src
 COPY models ./models
 COPY results ./results
+# Files checked out with a restrictive umask (mode 0600) would otherwise be unreadable
+# by the non-root runtime user below -> PermissionError / CrashLoopBackOff.
+RUN chmod -R a+rX /app
 
 # non-root
 RUN useradd --uid 10001 --create-home autoscaler

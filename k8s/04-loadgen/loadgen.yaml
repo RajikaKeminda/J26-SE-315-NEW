@@ -1,0 +1,26 @@
+# In-cluster load generator. Running the generator INSIDE the cluster removes the laptop and
+# the kubectl port-forward from the measurement path (a port-forward is a single TCP stream
+# through the API server and distorts latency at tens of requests per second).
+# It reuses the service image (python + httpx); the script is copied in by
+# scripts/15_live_experiment.sh. Deliberately NOT annotated for Prometheus scraping.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: loadgen
+  namespace: autoscaler-poc
+  labels:
+    app: loadgen
+spec:
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: loadgen
+      image: k8s-autoscaler/generic-service:latest
+      imagePullPolicy: IfNotPresent
+      command: ["sleep", "infinity"]
+      resources:
+        requests:
+          cpu: "250m"
+          memory: "128Mi"
+        limits:
+          cpu: "1500m"
+          memory: "384Mi"
