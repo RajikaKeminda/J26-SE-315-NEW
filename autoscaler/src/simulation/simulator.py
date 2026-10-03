@@ -1,15 +1,23 @@
 """
 simulator.py
 
-Fast cluster simulator, calibrated against real measurements taken from the
-actual deployed services (see README: 1 request ~135ms, 12 concurrent
-against MAX_CONCURRENCY=4 -> ~1.1s).
+A fast cluster simulator whose per-service physics (capacity, queueing latency,
+CFS throttling, tail inflation, memory) is FITTED to measurements from a real
+cluster - see service_model.py and calibration.py - and whose temporal dynamics
+mirror what the live control loop faces:
 
-v2 addition: RANDOM TOPOLOGY GENERATION. v1 only ever simulated the one
-fixed 6-service graph, which meant a shared policy trained on it would
-quietly overfit to that exact shape. Training across many random topologies
-(different sizes, different fan-out) is what actually teaches the shared
-policy a general rule rather than six memorized ones.
+  * pods are not instantly useful: a scale-up takes POD_STARTUP_SECONDS to become
+    Ready, so capacity arrives part-way through the step;
+  * a CPU/memory resize is a rolling restart (ROLLING_SECONDS_PER_REPLICA per
+    replica), so it takes effect late;
+  * overload builds a backlog that outlives the burst that caused it, and requests
+    that wait longer than the client timeout are dropped;
+  * the end-to-end latency a client sees is a probability mixture over the call
+    chains (each request is routed to ONE downstream by the traffic shares), and
+    percentiles are taken from that mixture, not from a single "worst" chain.
+
+Training uses RANDOM TOPOLOGIES (random_topology) so the shared policy learns a
+general rule rather than memorising one graph.
 """
 
 from dataclasses import dataclass, field
@@ -17,13 +25,18 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from src import config
+from src.simulation import service_model as sm
+from src.topologies import Topology
+from src.topology_intel.critical_path import (
+    critical_path_dfs, path_distribution, reachable)
 
 
 # ---------------------------------------------------------------------------
 # Topology generation
 # ---------------------------------------------------------------------------
-def random_topology(rng, min_services=4, max_services=9):
-    """Layered random DAG: 1 entry -> mid tier -> leaf tier. Always acyclic."""
+def random_topology(rng, min_services=4, max_services=9, heterogeneous_work=True) -> Topology:
+    """Layered random DAG: 1 entry -> mid tier -> leaf tier, with the occasional
+    shared callee (diamond). Always acyclic and fully reachable from the entry."""
     n = int(rng.integers(min_services, max_services + 1))
     services = [f"svc-{i}" for i in range(n)]
     entry = services[0]
@@ -41,13 +54,11 @@ def random_topology(rng, min_services=4, max_services=9):
         k = int(rng.integers(1, min(2, len(leaves)) + 1))
         for t in rng.choice(leaves, size=k, replace=False):
             graph[s].append([str(t), 0.0])
-    # any orphan gets attached to the entry point
     called = {c for ts in graph.values() for c, _ in ts}
     for s in services[1:]:
         if s not in called:
             graph[entry].append([s, 0.0])
 
-    # normalize outgoing traffic shares to sum to 1.0 per node
     for s, targets in graph.items():
         if not targets:
             continue
@@ -56,12 +67,31 @@ def random_topology(rng, min_services=4, max_services=9):
         for t, val in zip(targets, w):
             t[1] = float(val)
 
-    return services, entry, {k: [(c, w) for c, w in v] for k, v in graph.items()}
+    work = ({s: float(rng.uniform(8.0, 26.0)) for s in services}
+            if heterogeneous_work else {})
+    return Topology(name=f"rand-{n}", services=services, entry=entry,
+                    call_graph={k: [(c, w) for c, w in v] for k, v in graph.items()},
+                    work_ms=work)
 
 
-def fixed_topology():
-    """The real deployed 6-service topology from config."""
-    return config.SERVICES, config.ENTRY_SERVICE, config.CALL_GRAPH
+def topology_depth(topology: Topology) -> int:
+    """Number of services on the longest call chain (entry included)."""
+    _, path = critical_path_dfs(topology.call_graph, topology.entry,
+                                {s: 1.0 for s in topology.services})
+    return len(path)
+
+
+def slo_for(topology: Topology) -> float:
+    return config.slo_for_depth(topology_depth(topology))
+
+
+def budget_for(topology: Topology) -> float:
+    """Cluster budget in core-equivalents."""
+    return config.BUDGET_PER_SERVICE * len(topology.services)
+
+
+def fixed_topology() -> Topology:
+    return config.TOPOLOGY
 
 
 # ---------------------------------------------------------------------------
@@ -78,108 +108,299 @@ def generate_traffic(pattern, length, base_rps, rng):
         traffic = np.full(length, base_rps, dtype=float)
         s = length // 3
         e = s + max(2, length // 4)
-        peak = rng.uniform(4.0, 8.0)
+        peak = rng.uniform(2.5, 4.0)
         traffic[s:e] = base_rps * peak
-        ramp = max(1, (e - s) // 3)
+        ramp = max(1, (e - s) // 4)
         traffic[max(0, s - ramp):s] = np.linspace(base_rps, base_rps * peak, min(ramp, s))
-        traffic[e:e + ramp] = np.linspace(base_rps * peak, base_rps, ramp)[:max(0, len(traffic) - e)]
+        tail = np.linspace(base_rps * peak, base_rps, ramp)[:max(0, len(traffic) - e)]
+        traffic[e:e + len(tail)] = tail
         traffic += rng.normal(0, base_rps * 0.03, length)
     elif pattern == "diurnal":
         traffic = base_rps * (1.5 + 1.2 * np.sin(2 * np.pi * t / length - np.pi / 2))
         traffic += rng.normal(0, base_rps * 0.04, length)
     elif pattern == "rampup":
-        traffic = np.linspace(base_rps * 0.5, base_rps * 5.0, length)
+        traffic = np.linspace(base_rps * 0.5, base_rps * 3.2, length)
         traffic += rng.normal(0, base_rps * 0.04, length)
     else:
         raise ValueError(pattern)
-    return np.clip(traffic, 1.0, None)
+    return np.clip(traffic, 0.5, None)
 
 
 # ---------------------------------------------------------------------------
-# Simulator
+# Numerics for the end-to-end mixture
+# ---------------------------------------------------------------------------
+def _erf(x):
+    """Vectorised erf (Abramowitz-Stegun 7.1.26, |err| < 1.5e-7)."""
+    sign = np.sign(x)
+    ax = np.abs(x)
+    t = 1.0 / (1.0 + 0.3275911 * ax)
+    y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+                - 0.284496736) * t + 0.254829592) * t * np.exp(-ax * ax)
+    return sign * y
+
+
+def _mixture_quantiles(means, sigmas, probs, qs):
+    """Quantiles of a mixture of lognormals matched to (mean, sigma) per component."""
+    means = np.maximum(np.asarray(means, dtype=float), 1e-6)
+    sig = np.maximum(np.asarray(sigmas, dtype=float), 1e-6)
+    probs = np.asarray(probs, dtype=float)
+    s2 = np.log1p((sig / means) ** 2)
+    m = np.log(means) - s2 / 2.0
+    s = np.sqrt(s2)
+
+    def cdf(x):
+        z = (np.log(x) - m) / (s * np.sqrt(2.0))
+        return float(np.sum(probs * 0.5 * (1.0 + _erf(z))))
+
+    out = []
+    for q in qs:
+        lo, hi = 1e-3, float(np.max(means) * 50.0 + 1000.0)
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            if cdf(mid) < q:
+                lo = mid
+            else:
+                hi = mid
+        out.append(0.5 * (lo + hi))
+    return out
+
+
 # ---------------------------------------------------------------------------
 @dataclass
-class Simulator:
-    services: list
-    entry_service: str
-    call_graph: dict
-    replicas: dict = field(default_factory=dict)
+class ServiceState:
+    replicas: int                              # desired replicas (ready + starting)
+    cpu: float                                 # per-pod CPU allocation currently applied
+    mem: float                                 # per-pod memory limit currently applied (MiB)
+    starting: list = field(default_factory=list)   # seconds until each new pod is Ready
+    resize: tuple | None = None                # (target_cpu, target_mem, seconds_remaining)
+    backlog: float = 0.0                       # queued requests
 
-    def __post_init__(self):
+
+class Simulator:
+    """One simulated cluster. `step(rps)` advances STEP_SECONDS and returns the metrics
+    a monitoring stack would report for that window."""
+
+    def __init__(self, topology: Topology, rng=None, obs_noise: float = 0.0):
+        self.topology = topology
+        self.services = list(topology.services)
+        self.entry_service = topology.entry
+        self.call_graph = topology.call_graph
+        self.rng = rng if rng is not None else np.random.default_rng(0)
+        self.obs_noise = obs_noise
+        self._paths = path_distribution(self.call_graph, self.entry_service)
+        self._order = reachable(self.call_graph, self.entry_service)
+        self.slo_ms = slo_for(topology)
+        self.budget = budget_for(topology)
         self.reset()
 
-    def reset(self):
-        self.replicas = {s: 2 for s in self.services}
+    # kept for callers that used the v2 attribute names
+    @property
+    def replicas(self):
+        return {s: st.replicas for s, st in self.state.items()}
 
+    def reset(self, replicas=None, cpu=None, mem=None):
+        """Fresh cluster at the manifest's initial allocation (overridable per controller)."""
+        self.state = {s: ServiceState(
+            replicas=replicas or config.INITIAL_REPLICAS,
+            cpu=cpu or config.CPU_DEFAULT,
+            mem=float(mem or config.MEM_DEFAULT_MB)) for s in self.services}
+        self.prev_rps = {s: 0.0 for s in self.services}
+
+    # -- actions ------------------------------------------------------------
+    def apply(self, service, replica_delta=0, cpu=None, mem=None):
+        """Applies an (already guard-approved) action to one service."""
+        st = self.state[service]
+        if replica_delta:
+            target = int(np.clip(st.replicas + replica_delta, config.MIN_REPLICAS, config.MAX_REPLICAS))
+            diff = target - st.replicas
+            if diff > 0:
+                st.starting.extend([config.POD_STARTUP_SECONDS] * diff)
+            elif diff < 0:
+                drop = -diff
+                cancel = min(drop, len(st.starting))     # cancel not-yet-ready pods first
+                if cancel:
+                    st.starting = st.starting[:-cancel]
+            st.replicas = target
+        want_cpu = st.cpu if cpu is None else float(np.clip(cpu, config.CPU_MIN, config.CPU_MAX))
+        want_mem = st.mem if mem is None else float(np.clip(mem, config.MEM_MIN_MB, config.MEM_MAX_MB))
+        current_target = st.resize[:2] if st.resize else (st.cpu, st.mem)
+        if (want_cpu, want_mem) != tuple(current_target):
+            if (want_cpu, want_mem) == (st.cpu, st.mem):
+                st.resize = None
+            else:
+                st.resize = (want_cpu, want_mem, st.replicas * config.ROLLING_SECONDS_PER_REPLICA)
+
+    def target_allocation(self, service):
+        st = self.state[service]
+        return (st.resize[0], st.resize[1]) if st.resize else (st.cpu, st.mem)
+
+    def cost(self):
+        """Provisioned cost in core-equivalents (what the cluster bill would track)."""
+        total = 0.0
+        for s in self.services:
+            cpu, mem = self.target_allocation(s)
+            total += self.state[s].replicas * (cpu + config.MEM_COST_PER_GIB * mem / 1024.0)
+        return total
+
+    # -- dynamics -----------------------------------------------------------
     def _propagate(self, external_rps):
         incoming = {s: 0.0 for s in self.services}
         incoming[self.entry_service] = external_rps
-        frontier, seen = [self.entry_service], {self.entry_service}
-        while frontier:
-            nxt = []
-            for node in frontier:
-                for callee, weight in self.call_graph.get(node, []):
-                    incoming[callee] += incoming[node] * weight
-                    if callee not in seen:
-                        seen.add(callee)
-                        nxt.append(callee)
-            frontier = nxt
+        for node in self._topological_order():
+            for callee, share in self.call_graph.get(node, []):
+                incoming[callee] += incoming[node] * share
         return incoming
 
+    def _topological_order(self):
+        indeg = {s: 0 for s in self.services}
+        for targets in self.call_graph.values():
+            for c, _ in targets:
+                indeg[c] += 1
+        order, queue = [], [s for s, d in indeg.items() if d == 0]
+        while queue:
+            n = queue.pop(0)
+            order.append(n)
+            for c, _ in self.call_graph.get(n, []):
+                indeg[c] -= 1
+                if indeg[c] == 0:
+                    queue.append(c)
+        return order
+
     def step(self, external_rps):
+        dt = config.STEP_SECONDS
+        p = sm.params()
         incoming = self._propagate(external_rps)
         out = {}
+
         for s in self.services:
-            cap = self.replicas[s] * config.MAX_CONCURRENCY_PER_REPLICA * (1000.0 / config.WORK_MS)
-            util = incoming[s] / max(cap, 1e-6)
-            base = config.WORK_MS
-            if util <= 0.7:
-                latency = base * (1.0 + util * 0.5)
-            else:
-                latency = base * (1.35 + (util - 0.7) * 12.0)
+            st = self.state[s]
+            work = self.topology.work(s)
+            lam = incoming[s]
+
+            # ---- which pods are usable, and with what allocation, during this step ----
+            ready = st.replicas - len(st.starting)
+            n_eff = float(ready) + sum(max(0.0, min(1.0, (dt - t) / dt)) for t in st.starting)
+            n_eff = max(n_eff, 0.0)
+            cpu_eff, mem_eff = st.cpu, st.mem
+            if st.resize:
+                tc, tm, remaining = st.resize
+                f_new = max(0.0, min(1.0, (dt - remaining) / dt))
+                cpu_eff = st.cpu * (1 - f_new) + tc * f_new
+                mem_eff = st.mem * (1 - f_new) + tm * f_new
+
+            # memory pressure: a limit below the working set OOM-kills the pod
+            inflight0 = lam * sm.mean_latency_ms(0.5, cpu_eff, work, p) / 1000.0 / max(n_eff, 1.0)
+            ws = sm.memory_working_set_mb(inflight0, p)
+            mem_util = ws / max(mem_eff, 1.0)
+            oom_factor = 1.0
+            if mem_util > 1.0:
+                oom_factor = 0.3                       # crash-looping replicas serve little
+            n_cap = n_eff * oom_factor
+
+            cap = n_cap * sm.capacity_rps(cpu_eff, work, p)
+            cap = max(cap, 1e-6)
+
+            # ---- backlog dynamics ----
+            backlog0 = st.backlog
+            backlog1 = max(0.0, backlog0 + (lam - cap) * dt)
+            q_max = cap * p.request_timeout_s
+            dropped = 0.0
+            if backlog1 > q_max:
+                dropped = backlog1 - q_max
+                backlog1 = q_max
+            served = min(lam + backlog0 / dt, cap)
+            drop_frac = min(1.0, dropped / max(lam * dt, 1e-9))
+            st.backlog = backlog1
+
+            rho = lam / cap
+            steady = sm.mean_latency_ms(rho, cpu_eff, work, p)
+            queue_delay_ms = (0.5 * (backlog0 + backlog1) / cap) * 1000.0
+            mem_penalty = 1.0 + max(0.0, mem_util - 0.9) * 10.0
+            own_mean = steady * mem_penalty + queue_delay_ms
+            own_p95 = steady * mem_penalty * sm.tail_factor(rho, p) + 1.3 * queue_delay_ms
+
+            cores_used = served * sm.cpu_ms_per_request(work, p) / 1000.0 + p.idle_cores * n_eff
+            util = min(1.0, cores_used / max(n_eff * cpu_eff, 1e-6)) if n_eff > 0 else 1.0
+            inflight = (lam * own_mean / 1000.0 + 0.5 * (backlog0 + backlog1)) / max(n_eff, 1.0)
+
+            if self.obs_noise > 0:
+                nz = self.rng.lognormal(0.0, self.obs_noise, 2)
+                own_mean, own_p95 = own_mean * nz[0], own_p95 * nz[0]
+                util = float(min(1.0, util * nz[1]))
+
             out[s] = {
-                "requests": incoming[s],
-                "latency_ms": latency,
-                "replicas": self.replicas[s],
+                "requests": lam,
+                "rps_prev": self.prev_rps[s],
+                "latency_ms": own_mean,
+                "latency_p95_ms": own_p95,
                 "utilization": util,
+                "offered_load": rho,
+                "replicas": st.replicas,
+                "ready_replicas": ready,
+                "pending_replicas": len(st.starting),
+                "cpu": cpu_eff if not st.resize else st.resize[0],
+                "mem": mem_eff if not st.resize else st.resize[1],
+                "mem_utilization": min(mem_util, 2.0),
+                "inflight": inflight,
+                "work_ms": work,
+                "error_rate": drop_frac,
+                "backlog": backlog1,
             }
+            self.prev_rps[s] = lam
+
+            # ---- advance pod / resize timers ----
+            st.starting = [t - dt for t in st.starting if t - dt > 0]
+            if st.resize:
+                tc, tm, remaining = st.resize
+                if remaining - dt <= 0:
+                    st.cpu, st.mem, st.resize = tc, tm, None
+                else:
+                    st.resize = (tc, tm, remaining - dt)
+
+        self._fill_inclusive(out)
+        out["__e2e__"] = self._e2e(out)
         return out
 
-    def apply(self, service, delta):
-        self.replicas[service] = int(np.clip(
-            self.replicas[service] + delta, config.MIN_REPLICAS, config.MAX_REPLICAS))
+    # -- derived quantities -------------------------------------------------
+    def _fill_inclusive(self, metrics):
+        """Per-service inclusive latency (own + expected downstream), as Prometheus'
+        request-duration histogram on that service would report it."""
+        spread2 = {}
+        for s in reversed(self._topological_order()):
+            m = metrics[s]
+            callees = self.call_graph.get(s, [])
+            incl = m["latency_ms"] + sum(w * metrics[c]["latency_incl_ms"] for c, w in callees)
+            sp2 = (m["latency_p95_ms"] - m["latency_ms"]) ** 2 + sum(
+                w * spread2[c] for c, w in callees)
+            spread2[s] = sp2
+            m["latency_incl_ms"] = incl
+            m["latency_incl_p95_ms"] = incl + float(np.sqrt(sp2))
+
+    def _e2e(self, metrics):
+        means, sigmas, probs, ok = [], [], [], 0.0
+        for path, prob in self._paths:
+            means.append(sum(metrics[s]["latency_ms"] for s in path))
+            var = sum(((metrics[s]["latency_p95_ms"] - metrics[s]["latency_ms"]) / 1.645) ** 2
+                      for s in path)
+            sigmas.append(float(np.sqrt(var)))
+            probs.append(prob)
+            survive = 1.0
+            for s in path:
+                survive *= 1.0 - metrics[s]["error_rate"]
+            ok += prob * survive
+        p50, p95 = _mixture_quantiles(means, sigmas, probs, (0.5, 0.95))
+        return {
+            "mean_ms": float(np.dot(means, probs)),
+            "p50_ms": p50,
+            "p95_ms": p95,
+            "p99_ms": p95 * sm.params().p99_over_p95,
+            "error_rate": float(1.0 - ok),
+        }
 
 
 # ---------------------------------------------------------------------------
-# Critical path (exact DP over the DAG)
+# Critical path (kept here for callers that import it from the simulator)
 # ---------------------------------------------------------------------------
 def critical_path(call_graph, entry, latencies):
-    order, seen, frontier = [entry], {entry}, [entry]
-    while frontier:
-        nxt = []
-        for node in frontier:
-            for c, _ in call_graph.get(node, []):
-                if c not in seen:
-                    seen.add(c); order.append(c); nxt.append(c)
-        frontier = nxt
-
-    preds = {s: [] for s in order}
-    for node in order:
-        for c, _ in call_graph.get(node, []):
-            if c in preds:
-                preds[c].append(node)
-
-    best, prev = {}, {}
-    for node in order:
-        own = latencies.get(node, 0.0)
-        if not preds[node]:
-            best[node], prev[node] = own, None
-        else:
-            p = max(preds[node], key=lambda x: best[x])
-            best[node], prev[node] = own + best[p], p
-
-    end = max(best, key=best.get)
-    path, node = [], end
-    while node is not None:
-        path.append(node); node = prev[node]
-    return best[end], list(reversed(path))
+    """Longest latency chain via depth-first search. See topology_intel/critical_path.py."""
+    return critical_path_dfs(call_graph, entry, latencies)

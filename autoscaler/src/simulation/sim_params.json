@@ -1,0 +1,56 @@
+{
+  "params": {
+    "cpu_overhead_ms": 0.42358769667978713,
+    "idle_cores": 0.0219406826714903,
+    "base_extra_ms": 3.33203125,
+    "kappa": 0.9840625000000001,
+    "cfs_period_ms": 100.0,
+    "gil_cores": 1.0,
+    "rho_cap": 0.92,
+    "tail_idle": 1.6843750000000002,
+    "tail_busy": 2.56162109375,
+    "tail_knee": 0.5,
+    "p99_over_p95": 1.35,
+    "mem_base_mb": 56.30859375,
+    "mem_per_inflight_mb": 0.25,
+    "request_timeout_s": 10.0
+  },
+  "fit_report": {
+    "steady (fitted region)": {
+      "n": 31,
+      "mean_MAPE_%": 23.8051853921086,
+      "p95_MAPE_%": 26.87107717828418,
+      "mean_within_30%": 0.7419354838709677,
+      "p95_within_30%": 0.6451612903225806,
+      "p95_within_2x": 0.967741935483871
+    },
+    "near-saturation (held out)": {
+      "n": 5,
+      "mean_MAPE_%": 38.4065547625263,
+      "p95_MAPE_%": 52.19046578214499,
+      "mean_within_30%": 0.4,
+      "p95_within_30%": 0.4,
+      "p95_within_2x": 0.8
+    }
+  },
+  "capacity_check": {
+    "0.1": {
+      "observed_max_rps": 4.9326250414339965,
+      "model_capacity_rps": 5.061035011024926
+    },
+    "0.25": {
+      "observed_max_rps": 14.684280136419016,
+      "model_capacity_rps": 14.786398716921335
+    },
+    "0.5": {
+      "observed_max_rps": 29.6814593881254,
+      "model_capacity_rps": 30.995338226748682
+    },
+    "1.0": {
+      "observed_max_rps": 61.848298339605854,
+      "model_capacity_rps": 63.413217246403384
+    }
+  },
+  "source": "calibration/leaf_cpu*.json",
+  "n_points": 36
+}

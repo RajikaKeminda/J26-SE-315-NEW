@@ -161,6 +161,41 @@ def build_call_graph_from_traces(traces: list[dict], min_edge_count: int = 1):
     return services, graph
 
 
+def aggregate_window(traces: list[dict]) -> dict:
+    """
+    Aggregates one window of traces into the two graphs of the research design:
+
+      edges[(caller, callee)] = {"count": calls observed (SDG: call frequency),
+                                 "p50_ms", "p95_ms": latency percentiles of the CALLEE's
+                                 request span for that call (EHG: latency on the edge)}
+
+    The callee's request span is a CHILD_OF the caller's outbound-call span, so its
+    duration is exactly the inclusive latency the caller paid for that call.
+    """
+    durations: dict[tuple[str, str], list[float]] = {}
+    for trace in traces:
+        processes = trace.get("processes", {})
+        spans = trace.get("spans", [])
+        owner = {sp.get("spanID"): processes.get(sp.get("processID"), {}).get("serviceName")
+                 for sp in spans}
+        for sp in spans:
+            child = owner.get(sp.get("spanID"))
+            if not child:
+                continue
+            for ref in sp.get("references", []):
+                if ref.get("refType") != "CHILD_OF":
+                    continue
+                parent = owner.get(ref.get("spanID"))
+                if parent and parent != child:
+                    durations.setdefault((parent, child), []).append(sp.get("duration", 0) / 1000.0)
+    edges = {}
+    for edge, d in durations.items():
+        d.sort()
+        pct = lambda q: d[min(len(d) - 1, int(q * (len(d) - 1) + 0.5))]
+        edges[edge] = {"count": len(d), "p50_ms": pct(0.50), "p95_ms": pct(0.95)}
+    return edges
+
+
 def discover_topology(entry_service: str, lookback_seconds: int, limit: int):
     """
     Zero-touch topology: reconstruct (services, entry, call_graph) from live

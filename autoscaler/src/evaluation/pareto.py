@@ -1,33 +1,38 @@
 """
 pareto.py
 
-Multi-objective trade-off analysis. The reward is a scalarisation
-(W_LATENCY*slo + W_COST*cost + W_VARIANCE*variance), so a single trained
-policy is ONE point on the latency/cost trade-off curve. Sweeping the cost
-weight and re-training traces out the frontier, and HPA / static baselines can
-then be placed against it: a policy is only "better" if it is not dominated.
+Multi-objective trade-off analysis - the proposal's "Pareto-optimal trade-offs" between
+latency SLO adherence, infrastructure cost and load balance.
 
-    python -m src.evaluation.pareto --iterations 55 --episodes 20
+The MO-TD3 agent is conditioned on a preference vector w. ONE trained network therefore
+traces a whole trade-off curve: sweep w over the simplex at INFERENCE time and evaluate
+each point on identical traffic. (The earlier PPO version needed a full re-training per
+reward weighting, ~1.5 min each, and still collapsed to one corner.)
 
-Outputs results/pareto_results.json (served by the dashboard at /api/pareto).
-Objectives minimised: p95 latency (ms), mean cost (cores), SLO-violation rate.
+The learned front is compared against the conventional alternative - tuning the
+Kubernetes HPA, which also trades cost for latency but only through its CPU size and
+utilisation target - and against VPA / threshold / static. A point is Pareto-optimal if
+no other point (of ANY controller) is at least as good on all objectives and better on one.
+
+    python -m src.evaluation.pareto --episodes 16
+
+Objectives minimised: SLO-violation rate, mean p95 latency, mean cost. The scalar
+quality number reported per family is the 2-D hypervolume in (SLO-violation rate,
+cost / budget) against the reference point (1, 1): larger = a better front.
 """
 
 import argparse
 import json
 import os
 
-import numpy as np
-
 from src import config
-from src.baselines.rule_based import HPABaseline, StaticBaseline
-from src.evaluation.evaluate import make_rl_decider, run_episode
-from src.evaluation.train_arm import save_policy, train_policy
-from src.simulation.simulator import fixed_topology
+from src.evaluation.evaluate import HPA_GRID_CPU, HPA_GRID_TARGET, load_arm
+from src.evaluation.metrics import evaluate_controller
+from src.rl_agent import rewards
+from src.rl_agent.controllers import RLController, RuleController
+from src.topologies import DEMO6
 
-DEFAULT_WEIGHTS = [0.05, 0.15, 0.30, 0.55, 0.90, 1.50]
-PATTERNS = ["burst", "diurnal", "rampup", "normal"]
-OBJECTIVES = ("p95_latency", "mean_cost", "slo_violation_rate")
+OBJECTIVES = ("slo_violation_rate", "p95_latency", "mean_cost")
 
 
 def dominates(a: dict, b: dict) -> bool:
@@ -38,50 +43,50 @@ def dominates(a: dict, b: dict) -> bool:
 
 
 def pareto_front(points: list[dict]) -> list[bool]:
-    """Returns a parallel list: True where the point is non-dominated."""
+    """Parallel list: True where the point is non-dominated."""
     return [not any(dominates(q, p) for j, q in enumerate(points) if j != i)
             for i, p in enumerate(points)]
 
 
-def _evaluate(make_decider, episodes):
-    services, entry, graph = fixed_topology()
-    eps = [run_episode(make_decider(), seed=1000 + i, pattern=PATTERNS[i % len(PATTERNS)],
-                       services=services, entry=entry, call_graph=graph)
-           for i in range(episodes)]
-    return {k: float(np.mean([e[k] for e in eps])) for k in eps[0]}
+def hypervolume_2d(points, budget, ref=(1.0, 1.0)):
+    """Area dominated in (violation rate, cost/budget), up to `ref`. Larger is better."""
+    pts = sorted({(min(p["slo_violation_rate"], ref[0]), min(p["mean_cost"] / budget, ref[1]))
+                  for p in points})
+    hv, best_cost = 0.0, ref[1]
+    for x, y in pts:
+        if y < best_cost:
+            hv += (ref[0] - x) * (best_cost - y)
+            best_cost = y
+    return hv
 
 
-def sweep(weights, iterations, episodes, seed=0, save_models=True, verbose=True):
-    services, entry, graph = fixed_topology()
+def _point(name, kind, family, r, **extra):
+    return {"name": name, "kind": kind, "family": family, **extra,
+            **{k: r[k] for k in ("p95_latency", "p99_latency", "mean_cost", "slo_violation_rate",
+                                 "mean_util", "load_variance", "obj_slo", "obj_cost", "obj_balance")}}
+
+
+def sweep(agent, topology, episodes, grid_step=0.25, include_baselines=True, arm="mo_td3_full", log=print):
     points = []
-
-    original = config.W_COST
-    try:
-        for w in weights:
-            config.W_COST = w            # compute_reward() reads this at call time
-            if verbose:
-                print(f"\n=== W_COST = {w} ===")
-            policy, history, flags = train_policy("rl_full", iterations, seed, verbose=False)
-            policy.eval()
-            if save_models:
-                save_policy(policy, history, flags,
-                            os.path.join(config.MODELS_DIR, "pareto", f"w_cost_{w:.2f}.pt"),
-                            extra={"w_cost": w})
-            r = _evaluate(lambda p=policy: make_rl_decider(p, services, entry, graph), episodes)
-            r.update(name=f"rl_full@w_cost={w}", kind="rl", w_cost=w)
-            points.append(r)
-            if verbose:
-                print(f"  p95={r['p95_latency']:.1f}ms  cost={r['mean_cost']:.2f}  "
-                      f"viol={r['slo_violation_rate']*100:.1f}%")
-    finally:
-        config.W_COST = original
-
-    for name, make in (("hpa", lambda: HPABaseline(services).decide),
-                       ("static", lambda: StaticBaseline(services).decide)):
-        r = _evaluate(make, episodes)
-        r.update(name=name, kind="baseline", w_cost=None)
-        points.append(r)
-
+    for w in rewards.preference_grid(grid_step):
+        r = evaluate_controller(lambda w=w: RLController(agent, topology.services, w=w, name=arm),
+                                topology, n_episodes=episodes)
+        points.append(_point(f"{arm}@w=({w[0]:.2f},{w[1]:.2f},{w[2]:.2f})", "rl", "mo_td3", r,
+                             preference=[float(x) for x in w]))
+        log(f"  w=({w[0]:.2f},{w[1]:.2f},{w[2]:.2f})  p95={r['p95_latency']:7.1f}ms  "
+            f"cost={r['mean_cost']:.2f}  viol={r['slo_violation_rate'] * 100:5.1f}%")
+    if include_baselines:
+        S = topology.services
+        for name in ("static", "threshold", "vpa"):
+            r = evaluate_controller(lambda n=name: RuleController(n, S), topology, n_episodes=episodes)
+            points.append(_point(name, "baseline", name, r))
+        for cpu in HPA_GRID_CPU:
+            for target in HPA_GRID_TARGET:
+                r = evaluate_controller(
+                    lambda c=cpu, t=target: RuleController("hpa", S, initial={"cpu": c}, target_utilization=t),
+                    topology, n_episodes=episodes)
+                points.append(_point(f"hpa(cpu={cpu},target={target})", "baseline", "hpa", r,
+                                     hpa_cpu=cpu, hpa_target=target))
     for p, nd in zip(points, pareto_front(points)):
         p["pareto_optimal"] = nd
     return points
@@ -89,27 +94,38 @@ def sweep(weights, iterations, episodes, seed=0, save_models=True, verbose=True)
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--weights", type=float, nargs="*", default=DEFAULT_WEIGHTS)
-    ap.add_argument("--iterations", type=int, default=55)
-    ap.add_argument("--episodes", type=int, default=20)
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--arm", default="mo_td3_full")
+    ap.add_argument("--episodes", type=int, default=16)
+    ap.add_argument("--grid-step", type=float, default=0.25)
     ap.add_argument("--out", default=config.PARETO_PATH)
     args = ap.parse_args()
 
-    points = sweep(args.weights, args.iterations, args.episodes, args.seed)
+    agent = load_arm(args.arm)
+    if agent is None:
+        raise SystemExit(f"no checkpoint for {args.arm}: run `python -m src.evaluation.train_agent {args.arm}`")
+    points = sweep(agent, DEMO6, args.episodes, args.grid_step, arm=args.arm)
 
-    print("\n" + "=" * 86)
-    print(f"{'point':<24}{'p95 ms':>9}{'cost':>8}{'SLO viol':>11}{'pareto':>9}")
-    print("=" * 86)
+    budget = config.BUDGET_PER_SERVICE * len(DEMO6.services)
+    fam = {}
+    for fname in ("mo_td3", "hpa"):
+        sel = [p for p in points if p["family"] == fname]
+        fam[fname] = {"hypervolume": hypervolume_2d(sel, budget), "n_points": len(sel),
+                      "n_pareto_optimal": sum(p["pareto_optimal"] for p in sel)}
+
+    print("\n" + "=" * 96)
+    print(f"{'point':<46}{'p95 ms':>9}{'cost':>8}{'SLO viol':>11}{'pareto':>9}")
+    print("=" * 96)
     for p in sorted(points, key=lambda x: x["mean_cost"]):
-        print(f"{p['name']:<24}{p['p95_latency']:9.1f}{p['mean_cost']:8.2f}"
-              f"{p['slo_violation_rate']*100:10.1f}%{'  *' if p['pareto_optimal'] else '':>9}")
-    print("(* = non-dominated on p95 latency, cost and SLO-violation rate)")
+        print(f"{p['name']:<46}{p['p95_latency']:9.1f}{p['mean_cost']:8.2f}"
+              f"{p['slo_violation_rate'] * 100:10.1f}%{'  *' if p['pareto_optimal'] else '':>9}")
+    print("(* = non-dominated on SLO-violation rate, p95 latency and cost, over ALL controllers)")
+    print(f"\nhypervolume (higher = better front):  MO-TD3 {fam['mo_td3']['hypervolume']:.3f}   "
+          f"HPA tuning sweep {fam['hpa']['hypervolume']:.3f}")
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w") as f:
-        json.dump({"iterations": args.iterations, "episodes": args.episodes,
-                   "points": points}, f, indent=2)
+        json.dump({"episodes": args.episodes, "arm": args.arm, "objectives": list(OBJECTIVES),
+                   "families": fam, "points": points}, f, indent=2)
     print(f"\nSaved -> {args.out}")
 
 

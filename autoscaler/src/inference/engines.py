@@ -1,0 +1,410 @@
+"""
+engines.py
+
+The control engines behind the dashboard and the headless loop. Two modes emit the
+SAME payload shape, so the front end is identical:
+
+  DemoEngine   drives the calibrated simulator. No cluster needed - for development,
+               presentations and the defence.
+  LiveEngine   reads real Prometheus / Kubernetes state, decides, and applies real
+               scaling + resizing actions (or only logs them with shadow=True).
+
+Both run the controller of your choice (the learned MO-TD3 agent at a chosen
+preference, or the HPA / VPA / threshold / static baselines) behind the same safety
+guard, and can switch controller at run time.
+"""
+
+import json
+import time
+
+import numpy as np
+
+from src import config
+from src.baselines.rule_based import BASELINES
+from src.rl_agent import rewards
+from src.rl_agent.controllers import RLController, RuleController
+from src.rl_agent.env import AutoscalerEnv, topology_base_rps
+from src.rl_agent.mo_td3 import MOTD3Agent
+from src.safety.guards import SafetyGuard
+from src.simulation.simulator import generate_traffic, slo_for
+from src.topologies import DEMO6, Topology
+from src.topology_intel.graph_builder import build_observation
+
+CONTROLLERS = ["mo_td3", "hpa", "vpa", "threshold", "static"]
+HISTORY_LEN = 80
+
+
+def _clean(x):
+    """Recursively converts numpy scalars to plain Python so the payload is JSON-safe."""
+    if isinstance(x, dict):
+        return {k: _clean(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_clean(v) for v in x]
+    if isinstance(x, np.generic):
+        return x.item()
+    return x
+
+
+# ---------------------------------------------------------------------------
+def agent_path(arm=None):
+    import os
+    if arm:
+        return os.path.join(config.MODELS_DIR, f"{arm}.pt")
+    if os.path.exists(config.POLICY_PATH):
+        return config.POLICY_PATH
+    return os.path.join(config.MODELS_DIR, f"{config.DEFAULT_ARM}.pt")
+
+
+def load_agent(arm=None):
+    """Returns (agent, name) or (None, None) when no usable checkpoint exists (the engines
+    then run the HPA rules, and say so)."""
+    import os
+    path = agent_path(arm)
+    if not os.path.exists(path):
+        print(f"[engine] no trained policy at {path} - using HPA rules.")
+        return None, None
+    try:
+        agent = MOTD3Agent.load(path)
+    except Exception as e:                       # old-format checkpoint, corrupt file ...
+        print(f"[engine] cannot load {path}: {e} - using HPA rules.")
+        return None, None
+    print(f"[engine] loaded policy {path}")
+    return agent, os.path.splitext(os.path.basename(path))[0]
+
+
+def make_controller(name, services, agent, w):
+    if name == "mo_td3":
+        if agent is None:
+            return RuleController("hpa", services, label="hpa-fallback")
+        return RLController(agent, services, w=w)
+    return RuleController(name, services)
+
+
+def _is_baseline(controller) -> bool:
+    return getattr(controller, "name", "") in BASELINES
+
+
+# ---------------------------------------------------------------------------
+class BaseEngine:
+    mode = "base"
+
+    def __init__(self, agent, policy_name, controller="mo_td3", w=config.DEFAULT_PREFERENCE, shadow=False):
+        self.agent, self.policy_name = agent, policy_name
+        self.w = [float(x) for x in rewards.normalize_preference(w)]
+        self.shadow = shadow
+        self.controller_name = controller if (controller != "mo_td3" or agent is not None) else "hpa"
+        self.step_i = 0
+        self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
+
+    # -- control surface ------------------------------------------------
+    def set_controller(self, name):
+        if name not in CONTROLLERS:
+            raise ValueError(f"unknown controller {name!r}; choose from {CONTROLLERS}")
+        if name == "mo_td3" and self.agent is None:
+            raise ValueError("no trained policy is loaded")
+        self.controller_name = name
+        self._rebuild_controller()
+
+    def set_preference(self, w):
+        self.w = [float(x) for x in rewards.normalize_preference(w)]
+        if isinstance(self.controller, RLController):
+            self.controller.w = np.asarray(self.w, dtype=np.float32)
+
+    def _rebuild_controller(self):
+        self.controller = make_controller(self.controller_name, self.services, self.agent, self.w)
+
+    # -- payload --------------------------------------------------------
+    def _push_history(self, e2e, cost, rps, slo_ms):
+        h = self.history
+        h["p95"].append(round(e2e["p95_ms"], 1)); h["cost"].append(round(cost, 2))
+        h["rps"].append(round(rps, 1)); h["slo"].append(round(slo_ms, 1))
+        for k in h:
+            h[k] = h[k][-HISTORY_LEN:]
+
+    def _payload(self, metrics, obs, e2e, cost, proposals, approved, reasons, penalties,
+                 rps, slo_ms, budget, call_graph, entry, services, breaker_open, **extra):
+        crit_path = obs["critical_path"]
+        idx = {s: i for i, s in enumerate(services)}
+        ehg = obs["A_ehg"]
+
+        edges = []
+        for caller, targets in call_graph.items():
+            for callee, share in targets:
+                if caller not in idx or callee not in idx:
+                    continue
+                on_path = (caller in crit_path and callee in crit_path
+                           and crit_path.index(callee) - crit_path.index(caller) == 1)
+                edges.append({"source": caller, "target": callee, "traffic_share": round(share, 3),
+                              "latency_pressure": round(float(ehg[idx[caller], idx[callee]]), 3),
+                              "on_critical_path": on_path})
+
+        nodes = []
+        for s in services:
+            m = metrics[s]
+            prop, app = proposals.get(s, {}), approved.get(s, {})
+            util = m["utilization"]
+            nodes.append({
+                "id": s, "replicas": m["replicas"], "ready": m.get("ready_replicas", m["replicas"]),
+                "pending": m.get("pending_replicas", 0),
+                "cpu": round(m["cpu"], 3), "mem": round(m["mem"]),
+                "latency_ms": round(m["latency_ms"], 1), "latency_p95_ms": round(m["latency_p95_ms"], 1),
+                "requests": round(m["requests"], 1), "utilization": round(util, 3),
+                "mem_utilization": round(m.get("mem_utilization", 0.0), 3),
+                "on_critical_path": s in crit_path, "is_entry": s == entry,
+                "proposed_delta": int(prop.get("dr", 0)), "applied_delta": int(app.get("dr", 0)),
+                "proposed_cpu": round(prop.get("cpu", m["cpu"]), 3), "applied_cpu": round(app.get("cpu", m["cpu"]), 3),
+                "proposed_mem": round(prop.get("mem", m["mem"])), "applied_mem": round(app.get("mem", m["mem"])),
+                "blocked_reason": reasons.get(s),
+                "status": "critical" if util > 0.95 else "warn" if util > 0.75 else "ok",
+            })
+
+        payload = {
+            "step": self.step_i, "timestamp": time.time(), "mode": self.mode,
+            "external_rps": round(float(rps), 1), "slo_ms": round(slo_ms, 1),
+            "e2e": {k: round(float(v), 4 if k == "error_rate" else 1) for k, v in e2e.items()},
+            "slo_breached": e2e["p95_ms"] > slo_ms,
+            "critical_path": crit_path,
+            "critical_path_latency_ms": round(obs["critical_total"], 1),
+            # the breaker only matters for the learned agent (it is what hands control to HPA rules)
+            "breaker_open": bool(breaker_open and self.controller_name == "mo_td3"),
+            "total_replicas": sum(m["replicas"] for m in metrics.values()),
+            "cost": round(cost, 2), "budget": round(budget, 2),
+            "penalties": {k: round(float(v), 3) for k, v in penalties.items()},
+            "nodes": nodes, "edges": edges, "history": self.history,
+            "stale": False, "paused": False, "shadow": self.shadow,
+            "controller": self.controller_name, "preference": self.w,
+            "objectives": list(config.OBJECTIVES),
+            "policy": self.policy_name or "none",
+        }
+        payload.update(extra)
+        return _clean(payload)
+
+
+# ---------------------------------------------------------------------------
+class DemoEngine(BaseEngine):
+    mode = "demo"
+    LENGTH = 400
+
+    def __init__(self, agent, policy_name=None, scenario="burst", seed=None, topology: Topology = DEMO6,
+                 controller="mo_td3", w=config.DEFAULT_PREFERENCE, obs_noise=0.05):
+        super().__init__(agent, policy_name, controller, w)
+        self.topology = topology
+        self.services, self.entry, self.call_graph = list(topology.services), topology.entry, topology.call_graph
+        self.scenario = scenario
+        self.env = AutoscalerEnv(topology=topology, seed=seed, obs_noise=obs_noise, episode_length=self.LENGTH)
+        self._rebuild_controller()
+        self.reset()
+
+    def reset(self, scenario=None):
+        if scenario:
+            self.scenario = scenario
+        base = topology_base_rps(self.topology)
+        traffic = generate_traffic(self.scenario, self.LENGTH + 1, base, self.env.rng)
+        self.env.reset(topology=self.topology, traffic=traffic,
+                       initial=getattr(self.controller, "initial", None))
+        self.step_i = 0
+        self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
+        self.controller.reset()
+
+    def tick(self):
+        if self.env.t >= self.env.episode_length:        # scenario finished: replay it
+            self.reset()
+        obs = self.env.observe()
+        proposals = self.controller.decide(obs, breaker_open=self.env.guard.breaker_open)
+        obs, _, _, info = self.env.step_proposals(proposals, physical_only=_is_baseline(self.controller))
+        self._push_history(info["e2e"], info["cost"], obs["external_rps"], info["slo_ms"])
+        payload = self._payload(
+            info["metrics"], obs, info["e2e"], info["cost"], proposals, info["approved"], info["reasons"],
+            {k: v for k, v in zip(config.OBJECTIVES, [info["penalties"]["slo_penalty"],
+                                                        info["penalties"]["cost_norm"],
+                                                        info["penalties"]["balance_penalty"]])},
+            obs["external_rps"], info["slo_ms"], info["budget"], self.call_graph, self.entry,
+            self.services, info["breaker_open"], scenario=self.scenario)
+        self.step_i += 1
+        return payload
+
+
+# ---------------------------------------------------------------------------
+REDISCOVER_EVERY_TICKS = 6
+
+
+def _is_dag(services, graph):
+    indeg = {s: 0 for s in services}
+    for targets in graph.values():
+        for c, _ in targets:
+            if c in indeg:
+                indeg[c] += 1
+    queue, seen = [s for s, d in indeg.items() if d == 0], 0
+    while queue:
+        n = queue.pop()
+        seen += 1
+        for c, _ in graph.get(n, []):
+            if c in indeg:
+                indeg[c] -= 1
+                if indeg[c] == 0:
+                    queue.append(c)
+    return seen == len(services)
+
+
+class LiveEngine(BaseEngine):
+    """
+    Same decision logic, but state comes from real Prometheus/Kubernetes and actions go to
+    the real Kubernetes API. Imports are lazy so demo mode works without `kubernetes` /
+    `requests` configured.
+
+    Safety behaviour beyond the guard:
+      * If Prometheus queries fail, or a Deployment can't be read, the tick HOLDS (no
+        scaling, payload flagged stale) rather than reading missing data as zero load.
+      * `shadow=True` runs everything but never calls the Kubernetes API.
+    """
+    mode = "live"
+
+    def __init__(self, agent, policy_name=None, shadow=False, autodiscover=None,
+                 controller="mo_td3", w=config.DEFAULT_PREFERENCE):
+        from src.data_collection import prometheus_client, jaeger_client
+        from src.inference.live_state import LiveStateBuilder
+        from src.k8s_action import k8s_client
+        self._prom, self._jaeger, self._k8s = prometheus_client, jaeger_client, k8s_client
+        super().__init__(agent, policy_name, controller, w, shadow)
+        self.topology = config.TOPOLOGY
+        self.services, self.entry = list(config.SERVICES), config.ENTRY_SERVICE
+        self.call_graph = {k: list(v) for k, v in config.CALL_GRAPH.items()}
+        self.autodiscover = config.AUTODISCOVER_TOPOLOGY if autodiscover is None else autodiscover
+        self.topology_source = "config"
+        self.builder = LiveStateBuilder(self.services, self.entry, self.call_graph,
+                                        priors={s: self.topology.work(s) for s in self.services})
+        self.guard = SafetyGuard(services=self.services, budget=config.live_budget(len(self.services)))
+        self._last_ok_ts = None
+        self._last_payload = None
+        self._rebuild_controller()
+        if self.autodiscover:
+            self._rediscover()
+
+    def reset(self, scenario=None):
+        self.step_i = 0
+        self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
+        self.guard.reset()
+        self.controller.reset()
+
+    # -- topology ---------------------------------------------------------
+    def _rediscover(self):
+        """Merge the topology seen in live traces into the known one. Conservative on
+        purpose: trace sampling can miss rarely-hit branches, so a service/edge absent from
+        the sample is NOT treated as removed. New services are added; callers with observed
+        outbound calls get their edge weights replaced by the observed traffic shares."""
+        found = self._jaeger.discover_topology(
+            self.entry, config.JAEGER_LOOKBACK_SECONDS * 4, config.JAEGER_TRACE_LIMIT * 4)
+        if not found:
+            return
+        new_services, _, new_graph = found
+        services = list(self.services) + [s for s in new_services if s not in self.services]
+        graph = {s: list(self.call_graph.get(s, [])) for s in services}
+        for caller, targets in new_graph.items():
+            if targets:
+                graph[caller] = [(c, float(w)) for c, w in targets]
+        if not _is_dag(services, graph):
+            return
+        if services != self.services or graph != self.call_graph:
+            added = [s for s in services if s not in self.services]
+            self.services, self.call_graph = services, graph
+            self.guard.services = services
+            self.guard.budget = config.live_budget(len(services))
+            self.builder.set_topology(services, self.entry, graph)
+            self._rebuild_controller()
+            if added:
+                print(f"[live] topology discovery added services: {added}")
+        self.topology_source = "jaeger"
+
+    # -- stale hold --------------------------------------------------------
+    def _hold(self, reason):
+        """Payload for a tick where we refuse to act on missing data."""
+        step = self.step_i
+        self.step_i += 1
+        age = None if self._last_ok_ts is None else round(time.time() - self._last_ok_ts, 1)
+        if self._last_payload is not None:
+            p = json.loads(json.dumps(self._last_payload))
+            p.update(step=step, timestamp=time.time())
+            for n in p["nodes"]:
+                n["proposed_delta"] = n["applied_delta"] = 0
+                n["blocked_reason"] = None
+            p["nodes"][0]["blocked_reason"] = f"HOLD: {reason}"
+        else:
+            zero = {s: {"requests": 0.0, "rps_prev": 0.0, "latency_ms": 0.0, "latency_p95_ms": 0.0,
+                        "utilization": 0.0, "replicas": 1, "cpu": config.CPU_DEFAULT,
+                        "mem": float(config.MEM_DEFAULT_MB), "latency_incl_ms": 0.0,
+                        "latency_incl_p95_ms": 0.0} for s in self.services}
+            e2e = {"mean_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0, "p99_ms": 0.0, "error_rate": 0.0}
+            obs = build_observation(self.services, self.call_graph, self.entry, zero, e2e, 0.0,
+                                    self.guard.budget, slo_for(self.topology))
+            p = self._payload(zero, obs, e2e, 0.0, {}, {}, {self.entry: f"HOLD: {reason}"},
+                              {k: 0.0 for k in config.OBJECTIVES}, 0.0, config.SLO_LATENCY_MS,
+                              self.guard.budget, self.call_graph, self.entry, self.services,
+                              self.guard.breaker_open)
+            p["step"] = step
+        p.update(stale=True, stale_reason=reason, metrics_age_s=age, shadow=self.shadow,
+                 topology_source=self.topology_source)
+        return p
+
+    # -- main tick ----------------------------------------------------------
+    def tick(self):
+        if self.autodiscover and self.step_i % REDISCOVER_EVERY_TICKS == 0:
+            self._rediscover()
+
+        try:
+            prom = self._prom.collect()
+            k8s = self._k8s.get_state(self.services)
+        except Exception as e:           # Prometheus down, kubeconfig missing, API unreachable
+            return self._hold(f"cluster read failed: {e}")
+        missing = [s for s in self.services if s not in k8s]
+        if missing:
+            return self._hold(f"cannot read deployment(s): {', '.join(missing)}")
+        if not prom:
+            return self._hold("prometheus returned no series (targets not scraped yet?)")
+        self._last_ok_ts = time.time()
+
+        try:        # per-edge latency percentiles from traces (the EHG); optional
+            edges = self._jaeger.aggregate_window(self._jaeger.fetch_recent_traces(
+                self.entry, config.JAEGER_LOOKBACK_SECONDS, config.JAEGER_TRACE_LIMIT))
+        except Exception:
+            edges = {}
+        metrics, e2e, cost = self.builder.build(prom, k8s, edges)
+        for svc, (rz, sd) in self.guard.readiness(self.step_i).items():
+            if svc in metrics:
+                metrics[svc]["resize_cooldown"], metrics[svc]["scaledown_cooldown"] = rz, sd
+        slo_ms = slo_for_live(self.call_graph, self.entry)
+        obs = build_observation(self.services, self.call_graph, self.entry, metrics, e2e, cost,
+                                self.guard.budget, slo_ms)
+
+        self.guard.observe_slo(e2e["p95_ms"], slo_ms, self.step_i)
+        proposals = self.controller.decide(obs, breaker_open=self.guard.breaker_open)
+        approved, reasons = self.guard.filter(proposals, metrics, self.step_i,
+                                              physical_only=_is_baseline(self.controller))
+
+        for svc, a in approved.items():
+            if (a["dr"] or a["cpu"] != metrics[svc]["cpu"] or a["mem"] != metrics[svc]["mem"]) and not self.shadow:
+                try:
+                    self._k8s.apply_action(svc, a)
+                except Exception as e:      # never let a scaling failure kill the loop
+                    reasons[svc] = f"k8s error: {e}"
+                    approved[svc] = {"dr": 0, "cpu": metrics[svc]["cpu"], "mem": metrics[svc]["mem"]}
+
+        _, pen = rewards.objective_penalties(metrics, self.services, e2e, cost, self.guard.budget, slo_ms)
+        rps = metrics[self.entry]["requests"]
+        self._push_history(e2e, cost, rps, slo_ms)
+        payload = self._payload(metrics, obs, e2e, cost, proposals, approved, reasons,
+                                {"slo": pen["slo_penalty"], "cost": pen["cost_norm"],
+                                 "balance": pen["balance_penalty"]},
+                                rps, slo_ms, self.guard.budget, self.call_graph, self.entry,
+                                self.services, self.guard.breaker_open,
+                                topology_source=self.topology_source)
+        self.step_i += 1
+        self._last_payload = payload
+        return payload
+
+
+def slo_for_live(call_graph, entry):
+    from src.topology_intel.critical_path import critical_path_dfs
+    if config.SLO_LATENCY_MS_OVERRIDE:
+        return float(config.SLO_LATENCY_MS_OVERRIDE)
+    _, path = critical_path_dfs(call_graph, entry, {s: 1.0 for s in call_graph})
+    return config.slo_for_depth(len(path))
