@@ -1,0 +1,68 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: unit + integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            autoscaler/requirements-dev.txt
+            services/generic-service/requirements.txt
+      - name: Install (CPU-only torch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r autoscaler/requirements-dev.txt
+      - name: Run tests
+        working-directory: autoscaler
+        run: python -m pytest -q
+
+  images:
+    name: docker images + compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t k8s-autoscaler/generic-service:latest services/generic-service
+      - run: docker build -t k8s-autoscaler/autoscaler:latest autoscaler
+      - name: Autoscaler image serves the dashboard in demo mode
+        run: |
+          docker run -d --name dash -p 8080:8080 k8s-autoscaler/autoscaler:latest
+          for i in $(seq 1 30); do curl -fsS localhost:8080/healthz && break; sleep 2; done
+          curl -fsS localhost:8080/api/state
+          curl -fsS localhost:8080/api/results | grep -q rl_full
+          docker rm -f dash
+      - run: docker compose config -q
+
+  e2e-kind:
+    name: end-to-end on kind
+    needs: [test, images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: bash scripts/01_build_images.sh
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: autoscaler
+      - run: bash scripts/02_load_image_kind.sh autoscaler
+      - run: bash scripts/03_deploy_all.sh
+      - run: bash scripts/04_verify_deployment.sh
+      - name: Smoke test (traffic -> Prometheus/Jaeger -> autoscaler -> scaling)
+        run: bash scripts/14_e2e_smoke.sh
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          kubectl get pods,deploy -n autoscaler-poc -o wide
+          kubectl describe pods -n autoscaler-poc | tail -150
+          kubectl logs -n autoscaler-poc deploy/autoscaler --tail=100
