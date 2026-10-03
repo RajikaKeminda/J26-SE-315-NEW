@@ -24,12 +24,16 @@ README = os.path.join(os.path.dirname(config.BASE_DIR), "README.md")
 LABELS = {
     "static": "static (no scaling)", "threshold": "threshold rule (80 % / 30 %)",
     "hpa": "HPA (default 60 % target, 0.25-core pods)", "hpa_tuned": "**HPA, tuned** (CPU size × target, held-out grid)",
-    "vpa": "VPA (right-sizing only)",
-    "mo_td3_full": "**MO-TD3 full** (dual-graph GCN, hybrid actions)",
+    "vpa": "VPA (right-sizing only)", "mo_td3": "MO-TD3 (pure RL, seed 0)",
+    "k8s_hpa": "real Kubernetes HPA (60 % target, metrics-server)",
+    "mo_td3_full": "**MO-TD3 full** (dual-graph GCN, hybrid actions, pure RL)",
     "mo_td3_sdg_only": "MO-TD3, SDG branch only", "mo_td3_no_topology": "MO-TD3, no topology (no GCN)",
     "mo_td3_single_obj": "MO-TD3, single objective (latency only)", "mo_td3_replica_only": "MO-TD3, replicas only (no CPU/mem actions)",
-    "mo_td3_no_demo": "MO-TD3, no demonstrations",
     "mo_td3_categorical": "MO-TD3, categorical replica head (straight-through)",
+    "mo_td3_demo": "MO-TD3 full **+ HPA demonstrations** (TD3+BC)",
+    "mo_td3_demo_sdg_only": "  + demos, SDG branch only", "mo_td3_demo_no_topology": "  + demos, no topology",
+    "mo_td3_demo_single_obj": "  + demos, single objective", "mo_td3_demo_replica_only": "  + demos, replicas only",
+    "mo_td3_demo_categorical": "  + demos, categorical head",
 }
 
 
@@ -54,6 +58,14 @@ def comparison_table(rows):
     return head + "\n" + "\n".join(_row(n, r, best) for n, r in rows.items())
 
 
+def _seed_note(rows):
+    multi = {n: r["n_seeds"] for n, r in rows.items() if r.get("n_seeds", 1) > 1}
+    if not multi:
+        return ""
+    return ("Learned arms with several training seeds are shown as the **mean over seeds** ("
+            + ", ".join(f"{LABELS.get(n, n)}: {k}" for n, k in multi.items()) + ").")
+
+
 def block_results(res):
     if not res:
         return "_(no results yet - run `bash scripts/09_run_ablation.sh`)_"
@@ -63,7 +75,7 @@ def block_results(res):
            f"The tuned HPA is the best (CPU size, utilisation target) found on a held-out seed range: "
            f"**{m['hpa_tuned']['cpu']} cores, {m['hpa_tuned']['target']:.0%} target**.", "",
            "**6-service application (the one deployed on the cluster and calibrated against it):**", "",
-           comparison_table(res["demo6"])]
+           comparison_table(res["demo6"]), "", _seed_note(res["demo6"])]
     seeds = res.get("demo6_seeds") or {}
     if seeds:
         out += ["", "**Across training seeds** (mean ± std; one RL run is an anecdote):", "",
@@ -73,8 +85,13 @@ def block_results(res):
             out.append(f"| {LABELS.get(arm, arm)} | {len(d['seeds'])} | {f('p95_latency', '{:.0f}')} | "
                        f"{f('slo_violation_rate', '{:.1%}')} | {f('mean_cost', '{:.2f}')} | {f('scalarized', '{:.3f}')} |")
     if res.get("trainticket14"):
-        out += ["", "**14-service application with Train-Ticket's call structure - never seen in training:**", "",
-                comparison_table(res["trainticket14"])]
+        out += ["", "**14-service application with Train-Ticket's call structure - never seen in training "
+                "(larger and deeper than any training topology):**", "", comparison_table(res["trainticket14"]),
+                "", _seed_note(res["trainticket14"])]
+    if res.get("heldout_random"):
+        out += ["", "**16 held-out random topologies** (same generator as training, disjoint seeds, 4-12 services, "
+                "tiers 2-5, shared callees):", "", comparison_table(res["heldout_random"]),
+                "", _seed_note(res["heldout_random"])]
     return "\n".join(out)
 
 
@@ -89,9 +106,13 @@ def block_pareto(blob):
              "| point | p95 ms | SLO violations | cost | Pareto-optimal |", "|---|---|---|---|---|"]
     for p in sorted([p for p in pts if p["pareto_optimal"]], key=lambda p: p["mean_cost"]):
         lines.append(f"| {p['name']} | {p['p95_latency']:.0f} | {p['slo_violation_rate']:.1%} | {p['mean_cost']:.2f} | yes |")
+    m = fam["mo_td3"]
+    by_seed = ", ".join(f"seed {k}: {v:.3f}" for k, v in m.get("hypervolume_by_seed", {}).items())
+    spread = f" ± {m['hypervolume_std']:.3f} over {len(m['hypervolume_by_seed'])} training seeds ({by_seed})" if "hypervolume_by_seed" in m else ""
     lines += ["", f"Hypervolume in (violation rate, cost/budget), larger is better: "
-              f"**MO-TD3 {fam['mo_td3']['hypervolume']:.3f}** ({fam['mo_td3']['n_pareto_optimal']} of {fam['mo_td3']['n_points']} points Pareto-optimal) "
-              f"vs. **HPA tuning sweep {fam['hpa']['hypervolume']:.3f}** ({fam['hpa']['n_pareto_optimal']} of {fam['hpa']['n_points']})."]
+              f"**MO-TD3 {m['hypervolume']:.3f}**{spread} vs. **HPA tuning sweep {fam['hpa']['hypervolume']:.3f}**. "
+              f"The plotted/listed MO-TD3 points are from the *median* seed ({m.get('representative_seed', 0)}), not the best "
+              f"({m['n_pareto_optimal']} of {m['n_points']} of its points are Pareto-optimal over all controllers)."]
     return "\n".join(lines)
 
 

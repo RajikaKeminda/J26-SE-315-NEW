@@ -99,6 +99,21 @@ def available_seeds(arm):
     return sorted(set(seeds))
 
 
+def average_runs(runs):
+    """Mean of several evaluation summaries (one per training seed) - metric by metric, including the
+    per-pattern breakdown. A single run is returned unchanged."""
+    if len(runs) == 1:
+        return runs[0]
+    out = {k: float(np.mean([r[k] for r in runs])) for k, v in runs[0].items()
+           if isinstance(v, (int, float)) and k != "n_episodes"}
+    out["n_episodes"] = runs[0]["n_episodes"]
+    out["p95_latency_std"] = float(np.std([r["p95_latency"] for r in runs]))   # across seeds
+    if "by_pattern" in runs[0]:
+        out["by_pattern"] = {p: average_runs([r["by_pattern"][p] for r in runs]) for p in runs[0]["by_pattern"]}
+    out["n_seeds"] = len(runs)
+    return out
+
+
 def evaluate_topology(topology, n_episodes, hpa_best, w=config.DEFAULT_PREFERENCE, with_seeds=True, log=print):
     results = {}
     for name, make in baseline_factories(topology, hpa_best).items():
@@ -120,12 +135,57 @@ def evaluate_topology(topology, n_episodes, hpa_best, w=config.DEFAULT_PREFERENC
                 topology, n_episodes=n_episodes, w=w))
         if not runs:
             continue
-        # headline row = the primary seed (0), like the single checkpoint of earlier versions
-        results[arm] = runs[0]
+        # headline row = the MEAN over training seeds (never a cherry-picked seed)
+        results[arm] = average_runs(runs)
         if len(runs) > 1:
             per_seed[arm] = {k: [r[k] for r in runs] for k in KEY_METRICS}
             per_seed[arm]["seeds"] = seeds[:len(runs)]
     return results, per_seed
+
+
+HELDOUT_SEED0 = 777_000          # topology seeds disjoint from everything used in training / validation
+
+
+def heldout_topologies(n=16):
+    """Random topologies from the SAME generator the agent trained on, but never trained on (their
+    seeds are disjoint). Tests structural generalisation without Train-Ticket's specific shape."""
+    from src.simulation.simulator import random_topology
+    return [random_topology(np.random.default_rng(HELDOUT_SEED0 + i)) for i in range(n)]
+
+
+def evaluate_heldout(hpa_best, n_topologies=16, episodes_per_topology=4, w=config.DEFAULT_PREFERENCE, log=print):
+    """Every controller on `n_topologies` unseen random topologies (one episode per pattern each);
+    returns {controller: mean metrics over all topologies and seeds-of-training}."""
+    topos = heldout_topologies(n_topologies)
+
+    def over_topologies(make_for):
+        runs = [evaluate_controller(make_for(t), t, n_episodes=episodes_per_topology, w=w, seed0=9_000 + 7 * i)
+                for i, t in enumerate(topos)]
+        return average_runs(runs)
+
+    out = {}
+    for name in ("static", "threshold", "hpa", "hpa_tuned", "vpa"):
+        def make_for(t, name=name):
+            if name == "hpa_tuned":
+                return lambda: RuleController("hpa", t.services, label="hpa_tuned", initial={"cpu": hpa_best["cpu"]},
+                                               target_utilization=hpa_best["target"])
+            return lambda: RuleController(name, t.services)
+        out[name] = over_topologies(make_for)
+    for arm in ARMS:
+        seeds = available_seeds(arm)
+        runs = []
+        for sd in seeds:
+            agent = load_arm(arm, sd)
+            if agent is None:
+                continue
+            ew = arm_preference(arm)
+            runs.append(over_topologies(lambda t, a=agent, ew=ew, arm=arm: (
+                lambda: RLController(a, t.services, w=ew, name=arm))))
+        if runs:
+            out[arm] = average_runs(runs)
+    log(f"  evaluated on {len(topos)} held-out random topologies "
+        f"({min(len(t.services) for t in topos)}-{max(len(t.services) for t in topos)} services)")
+    return out
 
 
 def print_table(title, results, per_seed=None):
@@ -139,7 +199,7 @@ def print_table(title, results, per_seed=None):
               f"{r['slo_violation_rate'] * 100:9.1f}%{r['mean_cost']:7.2f}{r['mean_util']:6.2f}"
               f"{r['adaptation_time_s']:9.0f}{r['scalarized']:8.3f}")
     if per_seed:
-        print("\nacross training seeds (mean ± std):")
+        print("\nacross training seeds (mean ± std; the table above shows the seed mean):")
         for arm, d in per_seed.items():
             print(f"  {arm:<22} p95 {np.mean(d['p95_latency']):7.1f} ± {np.std(d['p95_latency']):6.1f}   "
                   f"viol {np.mean(d['slo_violation_rate']) * 100:5.1f}% ± {np.std(d['slo_violation_rate']) * 100:4.1f}   "
@@ -162,9 +222,12 @@ def main(n_episodes=24, save=True, out_path=None, skip_unseen=False, tune_episod
     print_table("demo6 - the 6-service application (deployed on the real cluster)", res, per_seed)
 
     if not skip_unseen:
-        res2, _ = evaluate_topology(TRAINTICKET14, n_episodes, hpa_best, with_seeds=False)
-        out["trainticket14"] = res2
-        print_table("trainticket14 - 14 services, Train-Ticket call structure, NEVER seen in training", res2)
+        res2, per_seed2 = evaluate_topology(TRAINTICKET14, n_episodes, hpa_best, with_seeds=True)
+        out["trainticket14"], out["trainticket14_seeds"] = res2, per_seed2
+        print_table("trainticket14 - 14 services, Train-Ticket call structure, NEVER seen in training", res2, per_seed2)
+        res3 = evaluate_heldout(hpa_best)
+        out["heldout_random"] = res3
+        print_table("16 held-out RANDOM topologies (same generator as training, disjoint seeds; 4-12 services)", res3)
 
     if save:
         out_path = out_path or config.RESULTS_PATH

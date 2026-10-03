@@ -34,43 +34,59 @@ from src.topology_intel.critical_path import (
 # ---------------------------------------------------------------------------
 # Topology generation
 # ---------------------------------------------------------------------------
-def random_topology(rng, min_services=4, max_services=9, heterogeneous_work=True) -> Topology:
-    """Layered random DAG: 1 entry -> mid tier -> leaf tier, with the occasional
-    shared callee (diamond). Always acyclic and fully reachable from the entry."""
+def random_topology(rng, min_services=4, max_services=12, heterogeneous_work=True) -> Topology:
+    """A random acyclic call graph with STRUCTURAL variety: 2-5 tiers, fan-out 1-4, and shared
+    callees (a service with several callers), over 4-12 services.
+
+    Why this matters: a GCN embedding is only as general as the graphs it was trained on. A generator
+    that always produced entry -> mid -> leaf trees would teach "what a service next to a hub looks
+    like" for ONE shape; the agent would then be applied to chains five services deep, or to a
+    callee shared by three callers, that it has never seen. (The earlier 3-tier generator did exactly
+    that, and the topology-aware agent generalised worse to unseen graphs than the topology-blind one.)
+
+    Construction: place services in tiers; every non-entry service gets 1-2 parents from earlier tiers
+    (preferring the previous tier), so edges only go forward (acyclic) and everything is reachable."""
     n = int(rng.integers(min_services, max_services + 1))
     services = [f"svc-{i}" for i in range(n)]
     entry = services[0]
 
-    n_mid = max(1, int(n * 0.4))
-    mid = services[1:1 + n_mid]
-    leaves = services[1 + n_mid:]
-    if not leaves:
-        leaves = [mid.pop()]
+    n_tiers = int(rng.integers(2, min(5, n) + 1))                    # entry tier + (n_tiers - 1) below it
+    tier_of = {entry: 0}
+    rest = services[1:]
+    for t, s in enumerate(rest[:n_tiers - 1], start=1):               # every tier gets at least one service
+        tier_of[s] = t
+    for s in rest[n_tiers - 1:]:
+        tier_of[s] = int(rng.integers(1, n_tiers))
+    by_tier = {}
+    for s, t in tier_of.items():
+        by_tier.setdefault(t, []).append(s)
 
-    graph = {s: [] for s in services}
-    for s in mid:
-        graph[entry].append([s, 0.0])
-    for s in mid:
-        k = int(rng.integers(1, min(2, len(leaves)) + 1))
-        for t in rng.choice(leaves, size=k, replace=False):
-            graph[s].append([str(t), 0.0])
-    called = {c for ts in graph.values() for c, _ in ts}
-    for s in services[1:]:
-        if s not in called:
-            graph[entry].append([s, 0.0])
+    graph = {s: {} for s in services}
+    for s in rest:
+        t = tier_of[s]
+        above = [x for x in services if tier_of[x] < t]
+        prev = by_tier.get(t - 1, [])
+        n_parents = 1 if (len(above) == 1 or rng.random() < 0.65) else 2
+        parents = []
+        for _ in range(n_parents):
+            pool = prev if (prev and rng.random() < 0.7) else above
+            cand = [x for x in pool if x not in parents]
+            if cand:
+                parents.append(str(rng.choice(cand)))
+        for par in parents:
+            graph[par][s] = 0.0
 
-    for s, targets in graph.items():
-        if not targets:
-            continue
-        w = rng.uniform(0.5, 1.0, size=len(targets))
-        w /= w.sum()
-        for t, val in zip(targets, w):
-            t[1] = float(val)
+    for s, targets in graph.items():                                  # random shares summing to 1 per caller
+        if targets:
+            w = rng.uniform(0.5, 1.0, size=len(targets))
+            w /= w.sum()
+            for t, val in zip(list(targets), w):
+                targets[t] = float(val)
 
     work = ({s: float(rng.uniform(8.0, 26.0)) for s in services}
             if heterogeneous_work else {})
     return Topology(name=f"rand-{n}", services=services, entry=entry,
-                    call_graph={k: [(c, w) for c, w in v] for k, v in graph.items()},
+                    call_graph={k: [(c, w) for c, w in v.items()] for k, v in graph.items()},
                     work_ms=work)
 
 

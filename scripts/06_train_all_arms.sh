@@ -6,8 +6,9 @@
 #   ARMS="mo_td3_full" bash scripts/06_train_all_arms.sh      # just the headline agent
 #   JOBS=4 bash scripts/06_train_all_arms.sh          # run 4 trainings in parallel (1 CPU thread each)
 #
-# Arms: mo_td3_full (dual-graph GCN, hybrid actions, multi-objective), mo_td3_sdg_only,
-# mo_td3_no_topology, mo_td3_single_obj, mo_td3_replica_only, mo_td3_no_demo, mo_td3_categorical.
+# Arms: mo_td3_full (dual-graph GCN, hybrid actions, multi-objective, pure RL) and its one-factor ablations
+# mo_td3_sdg_only, mo_td3_no_topology, mo_td3_single_obj, mo_td3_replica_only, mo_td3_categorical; plus the
+# demonstration-seeded counterparts mo_td3_demo, mo_td3_demo_{sdg_only,no_topology,single_obj,replica_only,categorical}.
 # Seed 0 -> autoscaler/models/<arm>.pt, other seeds -> autoscaler/models/seeds/<arm>_s<k>.pt.
 #
 # Memory note: each training process holds a replay buffer (~150-300 MB). On an 8 GB laptop that also runs
@@ -18,7 +19,7 @@ export PY="${PYTHON:-python3}"
 export EPISODES="${EPISODES:-${1:-1000}}"
 SEEDS="${SEEDS:-0}"
 JOBS="${JOBS:-1}"
-ARMS="${ARMS:-mo_td3_full mo_td3_sdg_only mo_td3_no_topology mo_td3_single_obj mo_td3_replica_only mo_td3_no_demo mo_td3_categorical}"
+ARMS="${ARMS:-mo_td3_full mo_td3_sdg_only mo_td3_no_topology mo_td3_single_obj mo_td3_replica_only mo_td3_categorical mo_td3_demo}"
 
 # one "arm seed" pair per line -> xargs runs them JOBS at a time (portable: macOS ships bash 3.2, which has no `wait -n`)
 for seed in $SEEDS; do for arm in $ARMS; do echo "$arm $seed"; done; done |

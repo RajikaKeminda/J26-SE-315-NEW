@@ -31,15 +31,31 @@ def test_validate_rejects_bad_topologies():
         get_topology("nope")
 
 
-def test_random_topologies_are_valid_and_varied():
+def test_random_topologies_are_valid_and_structurally_varied():
     rng = np.random.default_rng(0)
-    sizes = set()
-    for _ in range(60):
+    sizes, depths, shared, fanouts = set(), set(), 0, set()
+    for _ in range(300):
         t = random_topology(rng)
-        validate(t)
+        validate(t)                                           # DAG, shares sum to 1, everything reachable
         sizes.add(len(t.services))
+        depths.add(topology_depth(t))
+        parents = {}
+        for caller, targets in t.call_graph.items():
+            fanouts.add(len(targets))
+            for callee, _ in targets:
+                parents[callee] = parents.get(callee, 0) + 1
+        shared += any(v > 1 for v in parents.values())
         assert all(8.0 <= t.work(s) <= 26.0 for s in t.services)
-    assert sizes == {4, 5, 6, 7, 8, 9}
+    assert sizes == set(range(4, 13))
+    assert {2, 3, 4, 5} <= depths, "chains of different depths must all occur"
+    assert shared > 30, "services with several callers (diamonds) must be common"
+    assert {1, 2, 3} <= fanouts
+
+
+def test_training_topologies_never_contain_the_held_out_application_shape():
+    """TRAINTICKET14 has 14 services: strictly larger than anything trained on (size generalisation)."""
+    rng = np.random.default_rng(1)
+    assert max(len(random_topology(rng).services) for _ in range(200)) < len(TRAINTICKET14.services)
 
 
 def test_demo_topology_matches_the_deployed_manifests():
