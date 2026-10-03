@@ -355,7 +355,7 @@ python -m src.evaluation.report      # (from autoscaler/) refresh the README tab
 
 Watch pods react: `kubectl get pods -n autoscaler-poc -w`. On a machine with fewer than ~6 free CPU cores, set
 `CLUSTER_BUDGET_CORES` (env var of the autoscaler) to what your cluster can actually schedule.
-Windows: see [`WINDOWS_SETUP.md`](WINDOWS_SETUP.md).
+Windows: see [`WINDOWS_SETUP.md`](WINDOWS_SETUP.md). **Presenting this? Follow [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md)** (URLs for the dashboard, Prometheus and Jaeger, a live-load script, a 10-minute storyline and likely questions).
 
 ---
 

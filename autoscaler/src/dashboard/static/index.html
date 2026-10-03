@@ -370,19 +370,21 @@ function pushFeed(d){
   if(d.breaker_open) items.push({cls:'brk',body:'<b>circuit breaker open</b> <em>— falling back to HPA rules until the SLO recovers</em>'});
   d.nodes.forEach(n=>{
     const acted=[];
-    if(n.applied_delta>0) items.push({cls:'up',body:`scaled up <b>${short(n.id)}</b> <em>→ ${n.replicas+n.applied_delta} pods</em>`});
-    else if(n.applied_delta<0) items.push({cls:'down',body:`scaled down <b>${short(n.id)}</b> <em>→ ${n.replicas+n.applied_delta} pods</em>`});
+    if(n.applied_delta>0) items.push({cls:'up',body:`scaled up <b>${short(n.id)}</b> <em>+${n.applied_delta} pod${n.applied_delta>1?'s':''}</em>`});
+    else if(n.applied_delta<0) items.push({cls:'down',body:`scaled down <b>${short(n.id)}</b> <em>${n.applied_delta} pod${n.applied_delta<-1?'s':''}</em>`});
     if(n.applied_cpu!==n.cpu||n.applied_mem!==n.mem)
       items.push({cls:'up',body:`resized <b>${short(n.id)}</b> <em>cpu ${n.cpu}→${n.applied_cpu} · mem ${n.mem}→${n.applied_mem}MiB</em>`});
     const acting=n.applied_delta!==0||n.applied_cpu!==n.cpu||n.applied_mem!==n.mem;
     if(n.blocked_reason&&!acting){
       // a cooldown counting down ("3 of 6" -> "4 of 6") is ONE event, not one per window
       const key=n.blocked_reason.replace(/\(\d+ of \d+\)/g,'').trim();
-      if(lastBlocked[n.id]!==key) items.push({cls:'block',body:`<b>${short(n.id)}</b> <em>${n.blocked_reason}</em>`});
+      // routine clamps and resize cooldowns are not news; budget / memory-floor / scale-down / HOLD / API errors are
+      const important=/budget|memory floor|scale-down cooldown|HOLD|k8s error/.test(n.blocked_reason);
+      if(important&&lastBlocked[n.id]!==key) items.push({cls:'block',body:`<b>${short(n.id)}</b> <em>${n.blocked_reason}</em>`});
       lastBlocked[n.id]=key;
     } else lastBlocked[n.id]=null;
   });
-  if(!items.length) return;
+  if(!items.length){ const e=feed.querySelector('.empty'); if(e) e.textContent='watching - no scale, resize or blocked action yet'; return; }
   if(feed.querySelector('.empty')) feed.innerHTML='';
   items.forEach(it=>{
     const row=document.createElement('div'); row.className='ev '+it.cls;
