@@ -73,13 +73,17 @@ def derive_bounds(deployments, working_set_mb, node_headroom_mb=None, default_cp
             "MAX_REPLICAS": cap, "MIN_REPLICAS": 1, "INITIAL_REPLICAS": 1}
 
 
-def allocation_cost(deployments, mem_cost_per_gib=0.13):
-    """Core-equivalents currently allocated (the unit of the agent's cost objective); None if limits are unknown."""
+def allocation_cost(deployments, mem_cost_per_gib=0.13, default_cpu=None, default_mem=None):
+    """Core-equivalents currently allocated (the unit of the agent's cost objective). A Deployment without limits is counted at
+    the default size, exactly as the agent counts it (k8s_client.get_state falls back to CPU_DEFAULT / MEM_DEFAULT_MB); with no
+    defaults given, unknown limits make the cost None."""
     total = 0.0
     for d in deployments.values():
-        if not d.get("cpu") or not d.get("mem"):
+        cpu = d.get("cpu") or default_cpu
+        mem = d.get("mem") or default_mem
+        if not cpu or not mem:
             return None
-        total += d["replicas"] * (d["cpu"] + mem_cost_per_gib * d["mem"] / 1024.0)
+        total += d["replicas"] * (cpu + mem_cost_per_gib * mem / 1024.0)
     return total
 
 
@@ -227,14 +231,18 @@ def discover(namespace, prometheus, jaeger, entry=None, probes=None):
     settings.update(timing)
     report.append(f"pod start-up measured on {len(startups)} pods: {startup:.0f} s -> control step {timing['STEP_SECONDS']} s; "
                   f"cAdvisor is scraped every {prom.get('scrape_interval_s', 15.0):.0f} s -> metric window {timing['METRIC_WINDOW']}")
-    cost = allocation_cost(ctl_deps or deployments)
+    # The agent's cost counts EVERY service it shows. OBSERVE_UNTRACED=1 (set below) shows all running Deployments, so the budget must be
+    # sized from all of them; sizing it from the controlled ones only makes every scale-up exceed the budget.
+    running = {n: d for n, d in deployments.items() if d["ready"] > 0}
+    cost = allocation_cost(running or deployments, default_cpu=bounds['CPU_DEFAULT'], default_mem=bounds['MEM_DEFAULT_MB'])
     if cost:
-        n = max(1, len(controlled) or len(deployments))
-        settings["CLUSTER_BUDGET_CORES"] = round(cost * 1.3, 1)
-        settings["BUDGET_PER_SERVICE"] = round(cost * 1.3 / n * 1.2, 2)
-        report.append(f"cost budget: {cost:.1f} core-equivalents allocated now -> budget {settings['CLUSTER_BUDGET_CORES']}")
+        n = max(1, len(running or deployments))
+        settings["CLUSTER_BUDGET_CORES"] = round(cost * 1.1, 1)
+        settings["BUDGET_PER_SERVICE"] = round(cost * 1.1 / n * 1.2, 2)
+        report.append(f"cost budget: {cost:.1f} core-equivalents allocated across {len(running or deployments)} running services "
+                      f"-> budget {settings['CLUSTER_BUDGET_CORES']} (10 % above the allocation)")
     else:
-        report.append("WARNING: some Deployments have no CPU/memory limits - cost cannot be derived; default budget used")
+        report.append("WARNING: cost cannot be derived; default budget used")
     settings["ALLOW_RESIZE"] = 0
     settings["OBSERVE_UNTRACED"] = 1
     settings["NODE_MEMORY_RESERVE_MB"] = 768 if (prom["node_headroom_mb"] or 0) < 4096 else 1024

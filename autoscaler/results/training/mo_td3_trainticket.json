@@ -1,0 +1,181 @@
+{
+  "arm": "mo_td3_replica_only",
+  "seed": 8,
+  "episodes": 600,
+  "history": [
+    {
+      "episode": 50,
+      "val_scalarized": 0.4121371845404307,
+      "val_p95_ms": 1594.388109415984,
+      "val_cost": 12.906640625,
+      "val_slo_violation": 0.33,
+      "seconds": 33.1,
+      "critic_loss": 0.3698,
+      "q_mean": -9.8521,
+      "actor_loss": 8.1525
+    },
+    {
+      "episode": 100,
+      "val_scalarized": 0.40042822957038876,
+      "val_p95_ms": 993.0002446958702,
+      "val_cost": 14.577343749999999,
+      "val_slo_violation": 0.18500000000000003,
+      "seconds": 109.5,
+      "critic_loss": 0.4072,
+      "q_mean": -10.2857,
+      "actor_loss": 8.7825
+    },
+    {
+      "episode": 150,
+      "val_scalarized": 0.3892271439234416,
+      "val_p95_ms": 557.9476496756569,
+      "val_cost": 14.4029296875,
+      "val_slo_violation": 0.18666666666666665,
+      "seconds": 181.8,
+      "critic_loss": 0.3153,
+      "q_mean": -10.914,
+      "actor_loss": 9.233
+    },
+    {
+      "episode": 200,
+      "val_scalarized": 0.37703651189804077,
+      "val_p95_ms": 855.0864958367065,
+      "val_cost": 13.708945312500001,
+      "val_slo_violation": 0.20166666666666666,
+      "seconds": 254.1,
+      "critic_loss": 0.3876,
+      "q_mean": -10.933,
+      "actor_loss": 10.7603
+    },
+    {
+      "episode": 250,
+      "val_scalarized": 0.36559996008872986,
+      "val_p95_ms": 999.7342176510365,
+      "val_cost": 13.18203125,
+      "val_slo_violation": 0.205,
+      "seconds": 327.5,
+      "critic_loss": 0.3724,
+      "q_mean": -11.1332,
+      "actor_loss": 9.4638
+    },
+    {
+      "episode": 300,
+      "val_scalarized": 0.3659549315770467,
+      "val_p95_ms": 911.3063360077552,
+      "val_cost": 13.16734375,
+      "val_slo_violation": 0.20833333333333334,
+      "seconds": 399.6,
+      "critic_loss": 0.4822,
+      "q_mean": -10.905,
+      "actor_loss": 9.3337
+    },
+    {
+      "episode": 350,
+      "val_scalarized": 0.3696902612845103,
+      "val_p95_ms": 845.8636618321133,
+      "val_cost": 13.378476562500003,
+      "val_slo_violation": 0.18999999999999997,
+      "seconds": 473.6,
+      "critic_loss": 0.5024,
+      "q_mean": -10.7482,
+      "actor_loss": 9.664
+    },
+    {
+      "episode": 400,
+      "val_scalarized": 0.35964800318082174,
+      "val_p95_ms": 562.2342663285569,
+      "val_cost": 13.057187499999998,
+      "val_slo_violation": 0.20166666666666666,
+      "seconds": 548.3,
+      "critic_loss": 0.251,
+      "q_mean": -11.2362,
+      "actor_loss": 10.2706
+    },
+    {
+      "episode": 450,
+      "val_scalarized": 0.3652579804261526,
+      "val_p95_ms": 562.2291842159169,
+      "val_cost": 13.2352734375,
+      "val_slo_violation": 0.20166666666666666,
+      "seconds": 624.2,
+      "critic_loss": 0.4074,
+      "q_mean": -11.2132,
+      "actor_loss": 9.4285
+    },
+    {
+      "episode": 500,
+      "val_scalarized": 0.37615112066268924,
+      "val_p95_ms": 561.988667224865,
+      "val_cost": 13.714453125,
+      "val_slo_violation": 0.20166666666666666,
+      "seconds": 698.0,
+      "critic_loss": 0.6257,
+      "q_mean": -11.2006,
+      "actor_loss": 10.565
+    },
+    {
+      "episode": 550,
+      "val_scalarized": 0.38284933368364965,
+      "val_p95_ms": 561.8023122695408,
+      "val_cost": 14.017382812500001,
+      "val_slo_violation": 0.19833333333333333,
+      "seconds": 777.4,
+      "critic_loss": 0.4951,
+      "q_mean": -11.3204,
+      "actor_loss": 9.2989
+    },
+    {
+      "episode": 600,
+      "val_scalarized": 0.3790923535823822,
+      "val_p95_ms": 561.5946105047581,
+      "val_cost": 13.9090625,
+      "val_slo_violation": 0.19833333333333333,
+      "seconds": 856.1,
+      "critic_loss": 0.5609,
+      "q_mean": -11.4064,
+      "actor_loss": 10.6746
+    }
+  ],
+  "best_val_scalarized": 0.35964800318082174,
+  "selected_fresh_val_scalarized": 0.36878899360696477,
+  "eval_preference": [
+    0.5,
+    0.35,
+    0.15
+  ],
+  "topology_training": "random 4-14 services, 2-5 tiers + 1 target topologies p=0.7",
+  "init_from": "models/mo_td3_replica_only.pt",
+  "hparams": {
+    "n_step": 3,
+    "explore_noise": 0.2,
+    "eps_start": 0.2,
+    "eps_end": 0.03,
+    "bc_weight": 1.0,
+    "bc_floor": 0.3,
+    "bc_decay_frac": 0.8,
+    "demo_target_range": [
+      0.35,
+      0.65
+    ],
+    "demo_cpus": [
+      0.25,
+      0.5,
+      1.0
+    ],
+    "default_pref_prob": 0.3,
+    "relabel_prob": 0.5,
+    "val_episodes": 16,
+    "top_k": 3,
+    "final_val_episodes": 48,
+    "fixed_topology_prob": 0.0,
+    "replica_head": "round",
+    "actor_lr": 5e-05,
+    "critic_lr": 0.0002,
+    "batch_size": 128,
+    "tau": 0.005,
+    "gamma": 0.95,
+    "policy_delay": 2,
+    "grad_clip": 5.0,
+    "randomize_initial": true
+  }
+}

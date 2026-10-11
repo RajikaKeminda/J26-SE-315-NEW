@@ -41,6 +41,8 @@ def test_bounds_follow_current_limits_and_measured_memory():
 def test_allocation_cost_needs_limits():
     assert A.allocation_cost({"a": {"replicas": 2, "cpu": 1.0, "mem": 1024.0}}) == pytest.approx(2 * (1.0 + 0.13))
     assert A.allocation_cost({"a": {"replicas": 1, "cpu": None, "mem": 128.0}}) is None
+    # no limits: counted at the default size, as the agent does
+    assert A.allocation_cost({"a": {"replicas": 1, "cpu": None, "mem": None}}, default_cpu=0.5, default_mem=512.0) == pytest.approx(0.5 + 0.13 * 0.5)
 
 
 def _probes(traced_ready=True):
@@ -66,7 +68,9 @@ def test_discovery_derives_a_complete_safe_profile_from_real_traces():
     assert settings["METRICS_SOURCE"] == "otel" and settings["AUTOSCALER_ENTRY_SERVICE"] == "ts-gateway-service"
     assert settings["CONTROLLED_SERVICES"] == "ts-gateway-service,ts-order-service"        # traced and running only
     assert settings["ALLOW_RESIZE"] == 0 and settings["STEP_SECONDS"] == 25                  # 70 s median start-up
-    assert settings["CLUSTER_BUDGET_CORES"] == pytest.approx(2 * (1.0 + 0.13 * 800 / 1024) * 1.3, abs=0.1)
+    # the budget covers EVERY running service the agent will show (3 here, 2 of them traced), not only the controlled ones
+    assert settings["CLUSTER_BUDGET_CORES"] == pytest.approx(3 * (1.0 + 0.13 * 800 / 1024) * 1.1, abs=0.1)
+    assert settings["OBSERVE_UNTRACED"] == 1
     env = A.render_env(settings)
     assert "AUTOSCALER_ENTRY_SERVICE=ts-gateway-service" in env and "CONTROLLED_SERVICES=ts-gateway-service,ts-order-service" in env
     assert any("entry service = ts-gateway-service" in l for l in report)
