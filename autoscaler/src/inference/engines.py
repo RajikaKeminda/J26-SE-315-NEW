@@ -357,6 +357,31 @@ class LiveEngine(BaseEngine):
         self.topology_source = "jaeger-live"
         return {s: state[s] for s in services}
 
+    def _apply_cluster_safety(self, approved, reasons, metrics, prom):
+        """Real-cluster limits the per-service guard cannot know about (see config.NODE_MEMORY_RESERVE_MB)."""
+        if not config.ALLOW_RESIZE:
+            for svc, a in approved.items():
+                if a["cpu"] != metrics[svc]["cpu"] or a["mem"] != metrics[svc]["mem"]:
+                    a["cpu"], a["mem"] = metrics[svc]["cpu"], metrics[svc]["mem"]
+                    reasons.setdefault(svc, "resize disabled (ALLOW_RESIZE=0)")
+        ups = [s for s, a in approved.items() if a["dr"] > 0 and self._controlled(s)]
+        if not ups or not hasattr(self._prom, "node_memory_headroom_mb"):
+            return
+        try:
+            room = self._prom.node_memory_headroom_mb() - config.NODE_MEMORY_RESERVE_MB
+        except Exception as e:                       # cannot see the node -> do not add pods
+            room = -1.0
+            why = f"scale-up blocked: node memory unknown ({e})"
+        else:
+            why = None
+        for s in sorted(ups, key=lambda x: -metrics[x].get("utilization", 0.0)):     # busiest service first
+            need = approved[s]["dr"] * max(prom.get(s, {}).get("mem_mb", 0.0), 256.0)
+            if need <= room:
+                room -= need
+            else:
+                approved[s]["dr"] = 0
+                reasons[s] = why or f"scale-up blocked: node memory headroom ({max(room, 0):.0f} MiB left, need {need:.0f})"
+
     def _topology_info(self):
         lt = self.live_topology
         n_edges = sum(len(t) for t in self.call_graph.values())
@@ -440,6 +465,7 @@ class LiveEngine(BaseEngine):
         approved, reasons = self.guard.filter(proposals, metrics, self.step_i,
                                               physical_only=_is_baseline(self.controller))
 
+        self._apply_cluster_safety(approved, reasons, metrics, prom)
         for svc in list(approved):
             if not self._controlled(svc):
                 approved[svc] = {"dr": 0, "cpu": metrics[svc]["cpu"], "mem": metrics[svc]["mem"]}

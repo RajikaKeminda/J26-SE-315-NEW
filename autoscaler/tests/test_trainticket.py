@@ -153,3 +153,31 @@ def test_trace_window_follows_the_jaeger_servers_clock(monkeypatch):
     jc.fetch_recent_traces("svc", 60, 10)
     assert seen["end"] / 1e6 - _t.time() > 20          # the window ends in the server's time, not ours
     jc._SKEW.update(value=0.0, at=0.0)
+
+
+def test_cluster_safety_scale_up_needs_node_memory_and_resize_can_be_disabled(monkeypatch):
+    from src.inference.engines import LiveEngine
+    monkeypatch.setattr(config, "NODE_MEMORY_RESERVE_MB", 768.0)
+    monkeypatch.setattr(config, "ALLOW_RESIZE", False)
+    monkeypatch.setattr(LiveEngine, "_controlled", lambda self, s: True)
+
+    def run(free_mb):
+        e = LiveEngine.__new__(LiveEngine)
+        class P:
+            @staticmethod
+            def node_memory_headroom_mb(): return free_mb
+        e._prom = P
+        approved = {"a": {"dr": 1, "cpu": 0.5, "mem": 600}, "b": {"dr": 1, "cpu": 1.0, "mem": 800}}
+        metrics = {"a": {"cpu": 1.0, "mem": 800, "utilization": 0.9}, "b": {"cpu": 1.0, "mem": 800, "utilization": 0.1}}
+        prom = {"a": {"mem_mb": 200.0}, "b": {"mem_mb": 400.0}}      # a needs max(200, 256) MiB, b needs 400
+        reasons = {}
+        e._apply_cluster_safety(approved, reasons, metrics, prom)
+        return approved, reasons
+
+    approved, reasons = run(768 + 332)                  # 332 MiB of room: the busier service gets its pod, b does not
+    assert approved["a"] == {"dr": 1, "cpu": 1.0, "mem": 800}        # and its resize was undone
+    assert approved["b"]["dr"] == 0 and "node memory headroom" in reasons["b"]
+    approved, _ = run(768 + 1000)                       # plenty of room: both
+    assert approved["a"]["dr"] == approved["b"]["dr"] == 1
+    approved, reasons = run(100)                        # below the reserve: nothing is added
+    assert approved["a"]["dr"] == approved["b"]["dr"] == 0

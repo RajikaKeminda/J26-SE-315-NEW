@@ -40,6 +40,7 @@ NAMESPACE = os.environ.get("AUTOSCALER_NAMESPACE", "autoscaler-poc")
 # ---------------------------------------------------------------------------
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
 JAEGER_QUERY_URL = os.environ.get("JAEGER_QUERY_URL", "http://localhost:16686")
+PROMETHEUS_TIMEOUT_SECONDS = float(os.environ.get("PROMETHEUS_TIMEOUT_SECONDS", "5"))   # raise over an SSH tunnel
 METRIC_WINDOW = os.environ.get("METRIC_WINDOW", "10s")     # PromQL range for rates/quantiles
 
 # ---------------------------------------------------------------------------
@@ -218,4 +219,9 @@ TOPOLOGY_TTL_S = _env_float("TOPOLOGY_TTL_S", 300.0)
 TOPOLOGY_MIN_CALLS = _env_float("TOPOLOGY_MIN_CALLS", 2.0)
 # Services the agent may ACT on (comma-separated Deployment names). Empty = every discovered service.
 # Services outside the list are still observed and shown, but never scaled or resized.
+# Real-cluster safety beyond the guard: a scale-up is refused unless the node has this much memory (MiB) left AFTER
+# the extra pods (measured working set) are placed; ALLOW_RESIZE=0 restricts the agent to replica scaling
+# (a resize is a rolling restart that briefly runs old and new pod side by side).
+NODE_MEMORY_RESERVE_MB = _env_float("NODE_MEMORY_RESERVE_MB", 768.0)
+ALLOW_RESIZE = os.environ.get("ALLOW_RESIZE", "1") == "1"
 CONTROLLED_SERVICES = [x.strip() for x in os.environ.get("CONTROLLED_SERVICES", "").split(",") if x.strip()]
