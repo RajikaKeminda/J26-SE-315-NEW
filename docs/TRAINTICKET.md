@@ -94,10 +94,42 @@ application. The learned policy is not: it was trained in a simulator calibrated
 latency means high CPU, and its weights, the 4 s pod-start assumption and the SLO do not carry over to a JVM
 application. It needs recalibration and fine-tuning before it can be judged.
 
+## Calibration load runs (2026-10-11, steady load of 1, 2 and 3 users, 10 minutes each)
+
+Data: `autoscaler/results/trainticket_calibration.json` (recorded with `src/evaluation/tt_recorder.py`; per-endpoint latency
+from `ts-load.py`). The runs were coordinated with a second Claude session on the Windows PC that generated the load
+and watched the node.
+
+| Load | req/s (client / entry spans) | e2e p50 | e2e p95 | e2e p99 |
+|---|---|---|---|---|
+| 1 user | 2.5 / 2.3 | 98 ms | 819 ms | 944 ms |
+| 2 users | 4.2 / 3.9 | 116 ms | 1120 ms | 1472 ms |
+| 3 users | 6.1 / 5.6 | 104 ms | 1126 ms | 1619 ms |
+
+* **The p95 is set by the request mix, not by load.** The p50 is flat at about 100 ms. Booking requests (`preserve`,
+  `preserveOther`) take 0.9-1.3 s even with one user and 1.3-2.1 s with three. A single end-to-end SLO such as the
+  default 370 ms cannot be met by this application at any load; an SLO has to be per request class or relative to a
+  measured baseline (about 1.1-1.5 s for the whole mix).
+* **No service is CPU-saturated** in this range: CPU stays at or below about a third of the 1-core limits, `order` being the
+  highest (0.13 core at 1.6 rps, 0.33 at 2.9 rps). Replicas and CPU limits therefore cannot lower latency here.
+* **The binding resource is node memory, not CPU.** Memory per service is flat from idle to 3 users (about 290-410 MiB working
+  set against 800 MiB limits), so it is a fixed cost per replica. At 3 users the node already stalled once (entry throughput
+  fell to 1.1 rps, p95 5.6 s, memory pressure 77 %), so 4 users were not run. Reaching CPU saturation of `order` (about
+  9 rps by extrapolation) is not possible on this machine without memory thrash.
+* **Fit quality:** `cpu = idle + work x rps` could be fitted reliably only for the gateway (0.043 + 19.8 ms x rps, R2 = 1.00);
+  for the others idle JVM CPU dominates. Run 3's CPU series are missing for `order`, `basic`, `seat` and `station`
+  (cAdvisor scrapes were missed under node stress) and are stored as null.
+
+**Consequence for the research:** on this cluster the real-cluster experiment validates the pipeline (observation, trace-learned
+topology, safety, actuation) but cannot discriminate between scaling policies, because nothing it can scale is the bottleneck
+and the node cannot take more load. Policy training and comparison against HPA/VPA therefore stay in the simulator, which has to
+be recalibrated for this application (Java start-up 94 s, fixed memory per replica, a node memory budget, measured CPU cost per
+request) before its results are claimed for it.
+
 ## Not done yet
 
-1. Recalibrate the simulator for Java (per-service CPU cost above, 94 s start-up, capacity per core, latency at low CPU).
-2. Choose an SLO from a measured baseline; run a step-load test (1 vs 2 replicas of `order`) to see how much replicas help.
+1. Recalibrate the simulator for Java: per-service CPU cost (measured at 12 rps, above), 94 s start-up, fixed memory per replica and a node memory budget, request mix with a heavy tail. Capacity per core could not be measured on this node.
+2. Choose an SLO from the measured baseline (see calibration above); the step-load test of replicas is pointless below CPU saturation.
 3. Fine-tune the policy in the recalibrated simulator, then repeat the live test, against the real Kubernetes HPA.
 4. Verify the trace sampling rate (`OTEL_SAMPLE_RATE` is assumed 1.0; all rates scale with it).
 5. More memory for the node: the agent could not carry out a single scale-up on this cluster.
