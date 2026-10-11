@@ -209,3 +209,13 @@ SIM_PARAMS_PATH = os.path.join(BASE_DIR, "src", "simulation", "sim_params.json")
 
 # Discover the call graph from live Jaeger traces instead of the declared one.
 AUTODISCOVER_TOPOLOGY = os.environ.get("AUTODISCOVER_TOPOLOGY", "0") == "1"
+
+# Live topology (METRICS_SOURCE=trainticket): the graph is learned only from traces. Observed call counts
+# decay with this half-life; an edge not seen for TTL seconds is dropped; edges seen fewer than MIN_CALLS
+# (decayed) times are ignored as noise.
+TOPOLOGY_HALF_LIFE_S = _env_float("TOPOLOGY_HALF_LIFE_S", 120.0)
+TOPOLOGY_TTL_S = _env_float("TOPOLOGY_TTL_S", 300.0)
+TOPOLOGY_MIN_CALLS = _env_float("TOPOLOGY_MIN_CALLS", 2.0)
+# Services the agent may ACT on (comma-separated Deployment names). Empty = every discovered service.
+# Services outside the list are still observed and shown, but never scaled or resized.
+CONTROLLED_SERVICES = [x.strip() for x in os.environ.get("CONTROLLED_SERVICES", "").split(",") if x.strip()]
