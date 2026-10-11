@@ -90,7 +90,20 @@ TRAINTICKET_LIVE = Topology(
     services=["ts-gateway-service"],
     entry="ts-gateway-service",
     call_graph={"ts-gateway-service": []},
-    work_ms={},                       # measured online by LiveStateBuilder; DEFAULT_WORK_MS until then
+    # CPU ms per request, MEASURED on the real cluster (2026-10-11, ~12 rps booking load, median of steady
+    # windows of cAdvisor CPU / traced request rate; see docs/TRAINTICKET.md). They are priors only: the live
+    # estimator refines them within 0.6x-1.8x. Services not listed use DEFAULT_WORK_MS.
+    work_ms={
+        "ts-basic-service": 17.1,
+        "ts-contacts-service": 8.6,
+        "ts-gateway-service": 14.4,
+        "ts-order-service": 81.6,
+        "ts-route-service": 13.0,
+        "ts-seat-service": 18.4,
+        "ts-station-service": 6.6,
+        "ts-train-service": 10.0,
+        "ts-travel-service": 24.9,
+    },
 )
 
 TOPOLOGIES = {t.name: t for t in (DEMO6, TRAINTICKET14, TRAINTICKET_LIVE)}

@@ -357,6 +357,8 @@ Watch pods react: `kubectl get pods -n autoscaler-poc -w`. On a machine with few
 `CLUSTER_BUDGET_CORES` (env var of the autoscaler) to what your cluster can actually schedule.
 Windows: see [`WINDOWS_SETUP.md`](WINDOWS_SETUP.md). **Presenting this? Follow [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md)** (URLs for the dashboard, Prometheus and Jaeger, a live-load script, a 10-minute storyline and likely questions).
 
+**Real Train-Ticket (46 Java services on another machine):** [`docs/TRAINTICKET.md`](docs/TRAINTICKET.md) - tunnels, the live trace-learned topology, safety limits for real actions, measurements and the result of the first live run. Launch with `bash scripts/19_trainticket_live.sh`.
+
 ---
 
 ## The control room

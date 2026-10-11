@@ -17,7 +17,7 @@ control loop holds instead of reading missing data as zero load.
 
 from src import config
 from src.data_collection import jaeger_client, otel_traces
-from src.data_collection.prometheus_client import QueryFailed, _by_service
+from src.data_collection.prometheus_client import QueryFailed, _by_service, _instant_query
 
 POD_TO_SERVICE = r'(.+)-[a-z0-9]+-[a-z0-9]+'          # ts-order-service-848589b9d8-7rwfs -> ts-order-service
 
@@ -71,6 +71,15 @@ def collect(window: str | None = None) -> dict[str, dict]:
             "ok": True,
         }
     return out
+
+
+def node_memory_headroom_mb() -> float:
+    """Allocatable node memory minus what the node's cgroup currently uses (working set), in MiB."""
+    alloc = _instant_query('sum(kube_node_status_allocatable{resource="memory"})')
+    used = _instant_query('sum(container_memory_working_set_bytes{id="/"})')
+    if alloc is None or used is None:
+        raise QueryFailed("node memory metrics missing")
+    return (alloc - used) / 2**20
 
 
 def get_all_service_metrics(services, window=None):
