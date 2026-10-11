@@ -264,6 +264,8 @@ class LiveEngine(BaseEngine):
         from src.data_collection import prometheus_client, jaeger_client
         from src.inference.live_state import LiveStateBuilder
         from src.k8s_action import k8s_client
+        if config.METRICS_SOURCE == "trainticket":
+            from src.data_collection import trainticket_metrics as prometheus_client   # OTel spans + cAdvisor
         self._prom, self._jaeger, self._k8s = prometheus_client, jaeger_client, k8s_client
         super().__init__(agent, policy_name, controller, w, shadow)
         self.topology = config.TOPOLOGY
@@ -363,8 +365,11 @@ class LiveEngine(BaseEngine):
         self._last_ok_ts = time.time()
 
         try:        # per-edge latency percentiles from traces (the EHG); optional
-            edges = self._jaeger.aggregate_window(self._jaeger.fetch_recent_traces(
-                self.entry, config.JAEGER_LOOKBACK_SECONDS, config.JAEGER_TRACE_LIMIT))
+            traces = getattr(self._prom, "last_traces", None)       # reuse the window the metrics source fetched
+            if not traces:
+                traces = self._jaeger.fetch_recent_traces(
+                    self.entry, config.JAEGER_LOOKBACK_SECONDS, config.JAEGER_TRACE_LIMIT)
+            edges = self._jaeger.aggregate_window(traces)
         except Exception:
             edges = {}
         metrics, e2e, cost = self.builder.build(prom, k8s, edges)

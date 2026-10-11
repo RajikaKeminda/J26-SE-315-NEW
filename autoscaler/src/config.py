@@ -64,11 +64,14 @@ WORK_MS = _env_float("WORK_MS", 15.0)    # CPU ms per request burnt by services/
 # Resources per pod (requests == limits -> Guaranteed QoS, so "allocation" is
 # unambiguous) and the cluster budget the agent must live within.
 # ---------------------------------------------------------------------------
-CPU_MIN, CPU_MAX, CPU_QUANTUM, CPU_DEFAULT = 0.1, 1.0, 0.05, 0.25     # cores / pod
-MEM_MIN_MB, MEM_MAX_MB, MEM_QUANTUM_MB, MEM_DEFAULT_MB = 96, 512, 32, 128
-MIN_REPLICAS = 1
-MAX_REPLICAS = 8
-INITIAL_REPLICAS = 2
+# All overridable (see profiles/trainticket.env): a JVM service needs far more memory than the demo app.
+CPU_MIN, CPU_MAX = _env_float("CPU_MIN", 0.1), _env_float("CPU_MAX", 1.0)             # cores / pod
+CPU_QUANTUM, CPU_DEFAULT = _env_float("CPU_QUANTUM", 0.05), _env_float("CPU_DEFAULT", 0.25)
+MEM_MIN_MB, MEM_MAX_MB = _env_int("MEM_MIN_MB", 96), _env_int("MEM_MAX_MB", 512)
+MEM_QUANTUM_MB, MEM_DEFAULT_MB = _env_int("MEM_QUANTUM_MB", 32), _env_int("MEM_DEFAULT_MB", 128)
+MIN_REPLICAS = _env_int("MIN_REPLICAS", 1)
+MAX_REPLICAS = _env_int("MAX_REPLICAS", 8)
+INITIAL_REPLICAS = _env_int("INITIAL_REPLICAS", 2)
 # 1 vCPU ~ 7.5 GiB of RAM on the common cloud price lists -> 0.13 core-equivalents per GiB
 MEM_COST_PER_GIB = 0.13
 # Budget in core-equivalents per service. Scaling is bounded by what the cluster can
@@ -169,8 +172,15 @@ METRIC_STALENESS_SECONDS = 45     # refuse to act on data older than this
 # Control loop
 # ---------------------------------------------------------------------------
 POLL_INTERVAL_SECONDS = _env_int("POLL_INTERVAL_SECONDS", int(STEP_SECONDS))
-JAEGER_LOOKBACK_SECONDS = 30
-JAEGER_TRACE_LIMIT = 100
+JAEGER_LOOKBACK_SECONDS = _env_int("JAEGER_LOOKBACK_SECONDS", 30)
+JAEGER_TRACE_LIMIT = _env_int("JAEGER_TRACE_LIMIT", 100)
+JAEGER_TIMEOUT_SECONDS = _env_float("JAEGER_TIMEOUT_SECONDS", 5.0)
+# Where per-service request rate / latency come from: "prometheus" (the demo services export
+# http_request_* metrics) or "trainticket" (OpenTelemetry spans in Jaeger + cAdvisor; see
+# data_collection/trainticket_metrics.py).
+METRICS_SOURCE = os.environ.get("METRICS_SOURCE", "prometheus")
+# Fraction of requests that are traced (rates computed from traces are divided by it).
+OTEL_SAMPLE_RATE = _env_float("OTEL_SAMPLE_RATE", 1.0)
 TRACE_WINDOW_SECONDS = 5          # proposal: aggregate traces over 5-second sliding windows
 
 # ---------------------------------------------------------------------------
