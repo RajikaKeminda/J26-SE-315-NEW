@@ -168,8 +168,13 @@ TD3_REPLAY_EPISODES = 4000
 # ---------------------------------------------------------------------------
 # Safety guards (see safety/guards.py).  Counted in control steps.
 # ---------------------------------------------------------------------------
-SCALE_DOWN_COOLDOWN_STEPS = 3     # asymmetric: scaling DOWN is slower than UP
-RESIZE_COOLDOWN_STEPS = 6         # a resize is a rolling restart: do not thrash
+# Scaling DOWN is slower than UP, and never right after a scale-UP (a stabilisation window). Counted in control steps; it must
+# outlast a pod's start-up (about 4 s for the demo app, 95-240 s for Train-Ticket's JVMs).
+SCALE_DOWN_COOLDOWN_STEPS = _env_int("SCALE_DOWN_COOLDOWN_STEPS", 3)
+# Stabilisation window AFTER a scale-up (0 = off, which keeps the simulated results and the trained models exactly as shipped).
+# The live Train-Ticket profile turns it on: a JVM pod needs minutes to start, so undoing a scale-up within that time wastes it.
+SCALE_DOWN_AFTER_UP_STEPS = _env_int("SCALE_DOWN_AFTER_UP_STEPS", 0)
+RESIZE_COOLDOWN_STEPS = _env_int("RESIZE_COOLDOWN_STEPS", 6)         # a resize is a rolling restart: do not thrash
 RESIZE_DEADBAND = 0.15            # ignore resizes smaller than 15 %
 CIRCUIT_BREAKER_VIOLATIONS = 5    # consecutive SLO breaches -> fall back to HPA rules
 METRIC_STALENESS_SECONDS = 45     # refuse to act on data older than this

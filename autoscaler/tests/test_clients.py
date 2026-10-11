@@ -310,3 +310,17 @@ def test_k8s_state_uses_one_list_call_for_many_services_and_falls_back_when_list
     fake_k8s.allow_list = False                                                            # RBAC without the list verb
     st = k8s_client.get_state(["a", "s1", "missing"])
     assert set(st) == {"a", "s1"} and fake_k8s.reads == 3                                  # per-service reads still work
+
+
+def test_k8s_pod_ages_reports_the_youngest_pod_per_deployment(monkeypatch):
+    import datetime
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mk = lambda name, age, deleting=False: type("P", (), {"metadata": type("M", (), {
+        "name": name, "creation_timestamp": now - datetime.timedelta(seconds=age),
+        "deletion_timestamp": now if deleting else None})()})()
+    pods = [mk("svc-a-5d8f7c9b4-x2k9p", 600), mk("svc-a-5d8f7c9b4-q7w1z", 40), mk("svc-b-77c6d-zzzzz", 900), mk("svc-b-77c6d-dying", 5, True)]
+    monkeypatch.setattr(k8s_client, "_load_client", lambda: None)
+    monkeypatch.setattr(k8s_client.client, "CoreV1Api",
+                        lambda: type("C", (), {"list_namespaced_pod": lambda self, namespace: type("L", (), {"items": pods})()})())
+    ages = k8s_client.pod_ages("ns")
+    assert 39 < ages["svc-a"] < 45 and 890 < ages["svc-b"] < 910                          # deleting pods do not count

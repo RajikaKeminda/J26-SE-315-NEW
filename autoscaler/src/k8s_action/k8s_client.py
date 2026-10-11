@@ -115,6 +115,29 @@ def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
     return state
 
 
+def pod_ages(namespace: str = None) -> dict[str, float]:
+    """{deployment: age in seconds of its YOUNGEST pod}, one API call. The safety layer uses it to know that a service was
+    scaled or restarted recently even if this process was restarted since. {} when pods cannot be listed."""
+    import datetime
+    import re
+    namespace = namespace or app_config.NAMESPACE
+    try:
+        _load_client()
+        pods = client.CoreV1Api().list_namespaced_pod(namespace=namespace).items
+    except Exception as e:
+        print(f"[k8s_client] cannot list pods ({e}); pod ages unknown")
+        return {}
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ages: dict[str, float] = {}
+    for p in pods:
+        m = re.match(r"^(.+)-[a-z0-9]+-[a-z0-9]+$", p.metadata.name)
+        if not m or not p.metadata.creation_timestamp or p.metadata.deletion_timestamp:
+            continue
+        age = (now - p.metadata.creation_timestamp).total_seconds()
+        ages[m.group(1)] = min(age, ages.get(m.group(1), age))
+    return ages
+
+
 def get_all_state(namespace: str = None) -> dict[str, dict]:
     """State of EVERY Deployment in the namespace, in one API call (same fields as get_state). Raises if listing is not
     allowed - there is no per-service fallback when the names are not known."""

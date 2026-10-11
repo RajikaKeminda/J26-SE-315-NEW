@@ -60,6 +60,7 @@ class SafetyGuard:
     max_replicas: int = config.MAX_REPLICAS
 
     _last_scale_down_step: dict = field(default_factory=dict)
+    _last_scale_up_step: dict = field(default_factory=dict)
     _last_resize_step: dict = field(default_factory=dict)
     _consecutive_violations: int = 0
     _breaker_open: bool = False
@@ -126,8 +127,18 @@ class SafetyGuard:
                 # 3. asymmetric scale-down --------------------------------------
                 if a["dr"] < 0:
                     since = step - self._last_scale_down_step.get(svc, -999)
+                    since_up = step - self._last_scale_up_step.get(svc, -999)
+                    youngest = cur.get("youngest_pod_s")           # from the cluster itself: survives an agent restart
+                    after_up = config.SCALE_DOWN_AFTER_UP_STEPS
+                    window_s = after_up * config.STEP_SECONDS
                     if since < config.SCALE_DOWN_COOLDOWN_STEPS:
                         notes.append(f"scale-down cooldown ({since} of {config.SCALE_DOWN_COOLDOWN_STEPS})")
+                        a["dr"] = 0
+                    elif after_up and since_up < after_up:
+                        notes.append(f"scale-down blocked after a scale-up ({since_up} of {after_up} steps)")
+                        a["dr"] = 0
+                    elif after_up and youngest is not None and youngest < window_s:
+                        notes.append(f"scale-down blocked: newest pod is only {youngest:.0f} s old (window {window_s:.0f} s)")
                         a["dr"] = 0
 
                 # 4. resize deadband + cooldown ----------------------------------
@@ -153,6 +164,8 @@ class SafetyGuard:
             cur = current[svc]
             if a["dr"] < 0:
                 self._last_scale_down_step[svc] = step
+            if a["dr"] > 0:
+                self._last_scale_up_step[svc] = step
             if a["cpu"] != cur["cpu"] or a["mem"] != cur["mem"]:
                 self._last_resize_step[svc] = step
         return approved, reasons
@@ -165,6 +178,8 @@ class SafetyGuard:
         for svc in self.services:
             since_r = step - self._last_resize_step.get(svc, -999)
             since_d = step - self._last_scale_down_step.get(svc, -999)
+            if config.SCALE_DOWN_AFTER_UP_STEPS:
+                since_d = min(since_d, step - self._last_scale_up_step.get(svc, -999))
             out[svc] = (max(0.0, (config.RESIZE_COOLDOWN_STEPS - since_r) / config.RESIZE_COOLDOWN_STEPS),
                         max(0.0, (config.SCALE_DOWN_COOLDOWN_STEPS - since_d) / config.SCALE_DOWN_COOLDOWN_STEPS))
         return out
@@ -198,6 +213,7 @@ class SafetyGuard:
 
     def reset(self):
         self._last_scale_down_step.clear()
+        self._last_scale_up_step.clear()
         self._last_resize_step.clear()
         self._consecutive_violations = 0
         self._breaker_open = False
