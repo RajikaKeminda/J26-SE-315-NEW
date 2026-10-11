@@ -71,23 +71,34 @@ three quarters of the downstream time, so a path through it scores well - the po
 
 ## Demo C - how it orchestrates the cluster (8 min)
 
-The node's scarce resource is memory, not CPU, so at the load it can take nothing is CPU-bound. To have something to
-scale, stage a bottleneck (an operator action, reversible, using the same limited service account):
+The node's scarce resource is memory, not CPU, so at the load it can take nothing is CPU-bound. To have something to scale, stage a
+bottleneck (an operator action, reversible, with the same limited service account), then let the agent act on that one service:
 
 ```bash
 bash scripts/21_tt_demo_bottleneck.sh create 300m      # ts-order-service: 1 core -> 0.3 core (rolling restart, 1-2 min)
-CONTROLLED_SERVICES=ts-order-service bash scripts/20_autoscale_any_cluster.sh --namespace default --act
-kubectl get pods -w                                     # in a second terminal
+bash scripts/20_autoscale_any_cluster.sh --namespace default --controlled ts-order-service \
+     --slo 1400 --arm mo_td3_trainticket_cap6 --reserve 600 --act
+kubectl get pods -w                                     # second terminal
+# ... after the demo:
+bash scripts/21_tt_demo_bottleneck.sh restore
 ```
 
-With 3 users, `order` (about 80 ms of CPU per request) saturates its 0.3 core. What to point at: its utilisation ring
-goes red; the p95 rises; the decision feed shows the proposed and applied scale-up and the safety layer's reasons for anything
-blocked (cooldown, cluster budget, node memory); `kubectl get pods -w` shows the new pod (about 95 s to become Ready - Java);
-the p95 recovers; stop the load and watch it scale back after the cooldown. Then `bash scripts/21_tt_demo_bottleneck.sh restore`.
+Preconditions that mattered in the rehearsals: SkyWalking stopped (it held 851 MiB of a node with about 1 GiB free; without that the agent
+rightly refuses to add a pod), and the load generator running with the date fix (so the booking requests run).
 
-The safety layer (say it, it is part of the design): bounds, memory floor, scale-down cooldown, cluster budget, circuit breaker
-(5 breaches -> the HPA rules take over), staleness hold, a node-memory headroom check before any scale-up, and a whitelist
-of services the agent may touch.
+**What was measured live (two runs, `docs/TRAINTICKET.md`):** within the first minutes of 3-user load `order` hits 100 % CPU on its single
+0.3-core pod; the agent scales it 1 -> 2 (the second pod needs about 4 minutes to become Ready - Java under a CPU limit); `order`'s own p95
+falls from 1191 to 824 ms and the end-to-end p95 from 1920 to 1346 ms (booking mix, run 2); when the load stops it scales back to 1. In run 2 the
+circuit breaker opened while one pod was saturated and closed again once the second pod was Ready.
+What to point at: the utilisation ring of `order` going red; the decision feed (proposed vs applied, and the guard's reasons: node memory,
+cooldown, replica cap); the new pod in `kubectl get pods -w`; the p95 line; the breaker pill.
+
+Say it plainly: with a 4-minute pod start-up a reactive controller is slow, which is the case for anticipating load; the node can hold only
+one extra `order` pod; and on this node a tuned HPA would do about as well (see the table in `docs/TRAINTICKET.md`).
+
+The safety layer: bounds, memory floor, scale-down cooldown, **a stabilisation window after a scale-up** (found necessary in the rehearsal: the
+agent had undone its own scale-up), cluster budget, circuit breaker (5 breaches -> the HPA rules take over), staleness hold (also when many CPU
+series are missing), a node-memory check before any scale-up, and a whitelist of services the agent may touch.
 
 ## Demo D - scale (3 min)
 
@@ -121,7 +132,8 @@ of services the agent may touch.
 |---|---|
 | Does it work with any cluster? | It needs Kubernetes access, Prometheus with cAdvisor + kube-state-metrics, and OpenTelemetry traces in Jaeger for the call graph. Verified on two applications (the demo app and Train-Ticket). Istio/Linkerd metrics, Zipkin and Tempo are not implemented. Without traces it can observe but has no call graph. |
 | Why only 11 services controlled? | Only those emit traces. The others are observed (CPU, memory) but have no call edges. |
-| Did it scale Train-Ticket under load? | See the fine-tuning section: results of the live run are in `docs/TRAINTICKET.md`. On this node scaling is limited to about two extra pods by memory. |
-| Is 50+ services proven? | In simulation up to 100 (table above). Live: 47 Deployments observed, 11 with a call graph; a 50-service synthetic cluster does not fit this Mac's 4 GiB Docker VM. |
+| Did it scale Train-Ticket under load? | Yes, in two live runs it scaled the staged bottleneck `ts-order-service` 1 -> 2 and back, and the second pod cut its own p95 by about 30-50 %. The bottleneck was staged (CPU limit lowered), the node allows one extra pod, and run 1 lacked the booking requests (a load-script date bug, documented). |
+| Is 50+ services proven? | In simulation up to 100 services (table above; the agent was trained on 4-12 and fine-tuned on up to 64). Live: 47 Deployments in the cluster, 33 running and all observed, 11 with a call graph; a 50-service synthetic cluster does not fit this Mac's 4 GiB Docker VM. |
+| Is the agent better than a tuned HPA? | With room to scale (simulation, Train-Ticket topology) it has fewer SLO violations (7 % against 11 %) and a lower tail latency at a 14 % higher cost; swept over preferences its front matches the best HPA front. With the node's 2-replica cap every controller is capacity-limited and they are on par. Not a clear win; the added value is the critical path, the multi-objective control and the safety layer. |
 | Does the simulator match reality? | Calibrated on the demo app (capacity within 3 %). For Train-Ticket only memory, idle CPU, CPU per request and the topology are measured; the queueing terms are not re-fitted for Java. |
 | Why is the p95 so high? | Booking requests take 1-2 s on their own: the p95 of this application is set by the request mix, not by load. |

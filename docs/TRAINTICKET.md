@@ -126,10 +126,87 @@ and the node cannot take more load. Policy training and comparison against HPA/V
 be recalibrated for this application (Java start-up 94 s, fixed memory per replica, a node memory budget, measured CPU cost per
 request) before its results are claimed for it.
 
+## Critical path: checked against real requests (2026-10-11)
+
+`src/evaluation/critical_path_eval.py` attributes each real request's end-to-end time to services by walking its trace backwards
+from the end (`otel_traces.critical_time_by_service`; the values sum to the request's duration) and compares that with the path
+the agent finds (the learned graph + the depth-first search). 253 recorded requests (`tests/fixtures/trainticket_traces.json`),
+downstream time only (the entry service is on every path, and time spent in the 35 untraced services is blamed on it):
+
+| Path | Downstream time explained | Slowest service is on the path |
+|---|---|---|
+| **Agent (DFS on measured latency)** | **80 %** | **90 %** |
+| Random chain (expected value) | 48 % | 54 % |
+| Deepest chain | 4 % | 0 % |
+
+Limits: 91 of the 253 requests left the gateway through traced services; `ts-order-service` carries about three quarters of the
+downstream time, so any path through it scores well. The live dashboard shows the same measurement for the current window.
+
+## Live orchestration on the real cluster (2026-10-11)
+
+Setup: `ts-order-service` limited to 0.3 core (an operator action, restored afterwards) so that it saturates at a load the node can take;
+the agent (`mo_td3_trainticket_cap6`, replica-only) in act mode, restricted to `ts-order-service`, at most 2 replicas, SLO 1400 ms (1.25 x the
+p95 measured at 3 users). Records: `results/trainticket_live_orchestration_run{1,2}.json`; replayable frames: `results/replays/trainticket_run.jsonl`.
+
+| | One pod, CPU saturated | Two pods Ready |
+|---|---|---|
+| Run 1 (no bookings, see caveat): order own p95 / end-to-end p95 | 934 / 648 ms | 504 / 434 ms |
+| Run 2 (with bookings, 5.6 req/s, 0 errors): order own p95 / end-to-end p95 | 1191 / 1920 ms | 824 / 1346 ms |
+
+In both runs the agent scaled `order` 1 -> 2 within the first minutes of load, kept the second pod while the load lasted (the pod needed about 4 minutes
+to become Ready under the CPU limit) and scaled back to 1 when the load ended; the cluster was verified identical to its saved baseline afterwards.
+In run 2 the circuit breaker opened (p95 2283 ms for 5 steps, one saturated pod), the HPA rules took over, and it closed again once the second pod
+was Ready. Run 2 was the faithful one: **run 1 had no booking requests** (the services run on China time and the load script took the PC's date, so
+from 21:30 IST every trip search was empty), so its latencies are not comparable with the calibration runs.
+Both runs had a one-minute node stall at about 7-10 minutes into a 3-user run (also in calibration run 3, cause unknown) that never reached an abort line.
+
+### What the live runs found and fixed
+
+* **CPU series dropped by a too-short window.** A 60 s rate window over a 30 s cAdvisor scrape interval silently dropped the CPU of 13 of 36 services
+  (including the saturated one, which then read as idle). Now the window is 4x the scrape interval (derived by `auto_profile`), and the agent holds when more than 25 % of CPU series are missing.
+* **Scale-up undone at once.** The guard's cooldown counted only the time since the last scale-DOWN. It now also blocks a scale-down within `SCALE_DOWN_AFTER_UP_STEPS`
+  (10 steps = 5 min) of a scale-up, and refuses while the newest pod is younger than that (read from the cluster, so it survives an agent restart). Off by default so the
+  simulated results and trained models stay as shipped.
+* **Cluster budget vs. observed services.** With untraced services observed, the cost counted all 33 running services against a budget sized for 11 and every scale-up was refused.
+* **Node-memory reserve** (768 MiB) refused a scale-up by 21 MiB where the real margin was ~420 MB above the abort line; lowered to 600 MiB.
+* **Memory** was the binding resource: SkyWalking (851 MiB, not even working) had to be stopped for the node to have room for a second `order` pod.
+
+## Training results in the Train-Ticket regime (simulator: real topology, Java timing, measured CPU cost and memory)
+
+`results/trainticket_sim_cap2.json`, `trainticket_sim_cap6.json`, `trainticket_pareto_cap6.json`, `src/evaluation/regime_eval.py`, `pareto_regime.py`:
+
+| Regime | Controller | SLO violations | p95 | Cost | Score (lower is better) |
+|---|---|---|---|---|---|
+| replicas <= 2 (what the node allows) | tuned HPA | 47.6 % | 1090 ms | 13.6 | **0.458** |
+| | agent (fine-tuned) | 45.3 % | 1218 ms | 14.2 | 0.471 |
+| replicas <= 6 (room to scale) | tuned HPA | 10.6 % | 312 ms | 17.3 | **0.211** |
+| | agent trained in this regime | **7.1 %** | **281 ms** | 19.7 | 0.225 |
+
+With room to scale, the agent has fewer SLO violations and a lower tail latency than the tuned HPA at a 14 % higher cost; at the default preference the HPA's weighted score
+is marginally better. Swept over preferences, one network's trade-off front (hypervolume 0.510) matches the best front of the HPA tuning sweep (0.500): parity with more
+flexibility, not a win. With the 2-replica cap that this node imposes every controller is capacity-limited, and the agent is on par with the tuned HPA.
+
+## Many services (simulation; `results/scale_results.json`, `scale_results_size_trained.json`, `src/evaluation/scale_eval.py`)
+
+Random topologies of N services, matched seeds, the HPA re-tuned for each size. The original agent was trained on 4-12 services; "size-trained" was fine-tuned on 4-64 services.
+
+| Services | Decision time | Violations: agent | size-trained | tuned HPA | Cost: agent | tuned HPA |
+|---|---|---|---|---|---|---|
+| 8 | 0.4 ms | 16.4 % | 15.0 % | 17.5-33.9 % | 4.6 | 4.9 |
+| 14 | 0.4 ms | 5.6 % | 4.4 % | **2.4 %** | 8.3 | 9.0 |
+| 25 | 0.4 ms | 14.9 % | 12.8 % | 28.3 % | 15.0 | 16.3 |
+| 50 | 0.6-0.8 ms | 22.1 % | 17.5 % | 49.7 % | 29.2 | 30.9 |
+| 100 | 0.9 ms | 49.3 % | 47.2 % | 96.8 % | 52.8 | 57.9 |
+
+Live: the real cluster has 47 Deployments (33 running); one API call reads all of them per step, traces give the call graph for 11, and the rest are shown as observed-only nodes.
+A synthetic 50-service cluster does not fit the 4 GiB Docker VM of the controller machine.
+
 ## Not done yet
 
-1. Recalibrate the simulator for Java: per-service CPU cost (measured at 12 rps, above), 94 s start-up, fixed memory per replica and a node memory budget, request mix with a heavy tail. Capacity per core could not be measured on this node.
-2. Choose an SLO from the measured baseline (see calibration above); the step-load test of replicas is pointless below CPU saturation.
+1. The simulator is only partly re-calibrated for Java (memory, idle CPU, CPU per request, topology); the queueing terms are the demo service's.
+2. The SLO of 1400 ms is a baseline-derived choice, not a requirement of the application.
+3. The cause of the one-minute node stalls (about 7-10 minutes into 3-user runs) is unknown.
+4. Only 11 of 47 services emit traces: the others are observed, not part of the call graph.
 3. Fine-tune the policy in the recalibrated simulator, then repeat the live test, against the real Kubernetes HPA.
 4. Verify the trace sampling rate (`OTEL_SAMPLE_RATE` is assumed 1.0; all rates scale with it).
 5. More memory for the node: the agent could not carry out a single scale-up on this cluster.
