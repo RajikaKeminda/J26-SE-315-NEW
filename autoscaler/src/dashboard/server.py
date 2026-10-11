@@ -247,7 +247,7 @@ async def ws(websocket: WebSocket):
 # Startup
 # ---------------------------------------------------------------------------
 def configure(mode="demo", shadow=False, arm=None, scenario="burst", interval=None, seed=None,
-              controller="mo_td3", preference=config.DEFAULT_PREFERENCE):
+              controller="mo_td3", preference=config.DEFAULT_PREFERENCE, replay=None):
     """Builds the engine and stores it in STATE (used by main() and tests)."""
     agent, name = load_agent(arm)
     STATE.update(mode=mode, paused=False, latest=None, error=None, scenario=scenario,
@@ -256,6 +256,10 @@ def configure(mode="demo", shadow=False, arm=None, scenario="burst", interval=No
         STATE["engine"] = DemoEngine(agent, name, scenario=scenario, seed=seed,
                                      controller=controller, w=preference)
         STATE["interval"] = 1.0 if interval is None else interval
+    elif mode == "replay":
+        from src.inference.engines import ReplayEngine
+        STATE["engine"] = ReplayEngine(replay, agent, name)
+        STATE["interval"] = 2.0 if interval is None else interval
     else:
         STATE["engine"] = LiveEngine(agent, name, shadow=shadow, controller=controller, w=preference)
         STATE["interval"] = float(config.POLL_INTERVAL_SECONDS if interval is None else interval)
@@ -264,7 +268,8 @@ def configure(mode="demo", shadow=False, arm=None, scenario="burst", interval=No
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["demo", "live"], default="demo")
+    ap.add_argument("--mode", choices=["demo", "live", "replay"], default="demo")
+    ap.add_argument("--replay", default=None, help="replay mode: JSONL recorded with src/dashboard/record.py")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--shadow", action="store_true",
@@ -280,7 +285,7 @@ def main():
     args = ap.parse_args()
 
     configure(args.mode, args.shadow, args.arm, args.scenario, args.interval,
-              controller=args.controller, preference=args.preference)
+              controller=args.controller, preference=args.preference, replay=args.replay)
 
     import uvicorn
     print(f"[server] {args.mode} mode{' (shadow)' if args.shadow else ''} "

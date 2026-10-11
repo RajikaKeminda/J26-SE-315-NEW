@@ -104,6 +104,8 @@ class AutoscalerEnv:
                  use_guard=True, replica_only=False, episode_length=None):
         self.rng = np.random.default_rng(seed)
         self.fixed_topology = topology            # None -> a random topology every episode
+        self.topology_sizes = (4, 12)             # range of the random topologies (training can widen it)
+        self.randomize_initial = False             # training: start each service at a different CPU limit (heterogeneous cluster)
         self.obs_noise = obs_noise
         self.use_guard = use_guard
         self.replica_only = replica_only
@@ -115,12 +117,19 @@ class AutoscalerEnv:
 
     # ------------------------------------------------------------------
     def reset(self, pattern="random", topology: Topology | None = None, traffic=None, initial=None):
-        topo = topology or self.fixed_topology or random_topology(self.rng)
+        topo = topology or self.fixed_topology or random_topology(self.rng, *self.topology_sizes)
         self.topology = topo
         self.services, self.entry, self.call_graph = list(topo.services), topo.entry, topo.call_graph
         self.sim = Simulator(topo, rng=self.rng, obs_noise=self.obs_noise)
         if initial:
             self.sim.reset(**initial)
+        elif self.randomize_initial and self.rng.random() < 0.7:
+            # Real clusters are not uniform (one service has a tight limit, another a generous one): a policy that has only
+            # ever seen identical limits cannot be expected to cope. Levels span the allowed CPU range.
+            levels = np.array(sorted({round(config.CPU_MAX * f / config.CPU_QUANTUM) * config.CPU_QUANTUM
+                                      for f in (0.3, 0.5, 0.75, 1.0)}))
+            levels = np.clip(levels, config.CPU_MIN, config.CPU_MAX)
+            self.sim.reset(cpu={s2: float(self.rng.choice(levels)) for s2 in self.services})
         self.slo_ms, self.budget = self.sim.slo_ms, self.sim.budget
         self.guard = SafetyGuard(services=self.services, budget=self.budget)
         self.t = 0

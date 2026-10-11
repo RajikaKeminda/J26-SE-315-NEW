@@ -329,6 +329,17 @@ class MOTD3Agent:
             blob.update(extra)
         return blob
 
+    def warm_start(self, path):
+        """Fine-tuning: start from a trained checkpoint (actor, both critics, and their targets)."""
+        blob = torch.load(path, weights_only=False)
+        if blob.get("algo") != "mo_td3":
+            raise ValueError(f"{path} is not an MO-TD3 checkpoint")
+        self.actor.load_state_dict(blob.get("actor_online", blob["actor"]))
+        self.actor_t.load_state_dict(blob["actor"])
+        self.critic1.load_state_dict(blob["critic1"]); self.critic1_t.load_state_dict(blob["critic1"])
+        self.critic2.load_state_dict(blob["critic2"]); self.critic2_t.load_state_dict(blob["critic2"])
+        return blob
+
     def save(self, path, extra=None):
         import os
         os.makedirs(os.path.dirname(path), exist_ok=True)

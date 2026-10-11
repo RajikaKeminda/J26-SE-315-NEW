@@ -75,6 +75,16 @@ def _container(dep, service):
     return dep.spec.template.spec.containers[0]
 
 
+def _list_deployments(apps_v1, namespace):
+    """{name: Deployment} for the whole namespace in ONE API call (a 50-service cluster would otherwise need 50 round
+    trips per decision), or None when listing is not allowed (the caller falls back to one read per service)."""
+    try:
+        return {d.metadata.name: d for d in apps_v1.list_namespaced_deployment(namespace=namespace).items}
+    except client.exceptions.ApiException as e:
+        print(f"[k8s_client] cannot list deployments ({e.status} {e.reason}); reading them one by one")
+        return None
+
+
 def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
     """Real state per Deployment: desired + ready replicas and the CPU/memory limits of
     the pod template (what a new pod will get). Services that cannot be read are omitted
@@ -82,12 +92,19 @@ def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
     namespace = namespace or app_config.NAMESPACE
     apps_v1 = _load_client()
     state = {}
+    listed = _list_deployments(apps_v1, namespace)
     for svc in services:
-        try:
-            dep = apps_v1.read_namespaced_deployment(name=svc, namespace=namespace)
-        except client.exceptions.ApiException as e:
-            print(f"[k8s_client] failed to read {svc}: {e.status} {e.reason}")
-            continue
+        if listed is not None:
+            dep = listed.get(svc)
+            if dep is None:
+                print(f"[k8s_client] failed to read {svc}: no such deployment in {namespace}")
+                continue
+        else:
+            try:
+                dep = apps_v1.read_namespaced_deployment(name=svc, namespace=namespace)
+            except client.exceptions.ApiException as e:
+                print(f"[k8s_client] failed to read {svc}: {e.status} {e.reason}")
+                continue
         limits = (_container(dep, svc).resources.limits or {}) if _container(dep, svc).resources else {}
         state[svc] = {
             "replicas": dep.spec.replicas if dep.spec.replicas is not None else (dep.status.replicas or 0),
@@ -96,6 +113,16 @@ def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
             "mem": parse_mem_mb(limits.get("memory")) or float(app_config.MEM_DEFAULT_MB),
         }
     return state
+
+
+def get_all_state(namespace: str = None) -> dict[str, dict]:
+    """State of EVERY Deployment in the namespace, in one API call (same fields as get_state). Raises if listing is not
+    allowed - there is no per-service fallback when the names are not known."""
+    namespace = namespace or app_config.NAMESPACE
+    listed = _list_deployments(_load_client(), namespace)
+    if listed is None:
+        raise RuntimeError(f"cannot list deployments in {namespace}")
+    return get_state(list(listed), namespace)
 
 
 def rollout_complete(services: list[str], namespace: str = None) -> bool:

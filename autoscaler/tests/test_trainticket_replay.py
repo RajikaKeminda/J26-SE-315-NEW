@@ -39,6 +39,9 @@ class Cluster:
     def get_state(self, services, namespace=None):
         return {s: dict(v) for s, v in self.state.items() if s in services}
 
+    def get_all_state(self, namespace=None):
+        return {s: dict(v) for s, v in self.state.items()}
+
     def apply_action(self, svc, action, namespace=None):
         self.applied.append((svc, dict(action)))
         return {}
@@ -75,3 +78,15 @@ def test_engine_learns_topology_and_proves_the_critical_path(engine):
     assert {n["id"]: n["controlled"] for n in p["nodes"]}["ts-order-service"] is True
     assert all(not n["controlled"] for n in p["nodes"] if n["id"] != "ts-order-service")
     assert engine._k8s.applied == [] or all(s == "ts-order-service" for s, _ in engine._k8s.applied)
+
+
+def test_untraced_running_services_are_observed_as_isolated_nodes_never_controlled(engine, monkeypatch):
+    monkeypatch.setattr(config, "OBSERVE_UNTRACED", True)
+    engine._k8s.state["ts-auth-service"]["ready"] = 1
+    engine._k8s.state["ts-paused-service"] = {"replicas": 0, "ready": 0, "cpu": 1.0, "mem": 800.0}
+    p = engine.tick()
+    ids = {n["id"] for n in p["nodes"]}
+    assert "ts-auth-service" in ids and "ts-paused-service" not in ids        # running yes, paused no
+    assert not any(e["source"] == "ts-auth-service" or e["target"] == "ts-auth-service" for e in p["edges"])
+    auth = next(n for n in p["nodes"] if n["id"] == "ts-auth-service")
+    assert auth["controlled"] is False and all(a == "ts-order-service" for a, _ in engine._k8s.applied)

@@ -376,3 +376,17 @@ def test_server_falls_back_to_hpa_when_checkpoint_is_missing_or_old(tmp_path, mo
     with TestClient(server.app) as c:
         assert "mo_td3" not in c.get("/api/state").json()["controllers"]
         assert c.post("/api/controller/mo_td3").status_code == 400
+
+
+def test_replay_engine_plays_back_recorded_payloads_in_a_loop(tmp_path, live):
+    import json
+    from src.inference.engines import ReplayEngine
+    frames = [live.tick() for _ in range(3)]
+    path = tmp_path / "run.jsonl"
+    path.write_text("\n".join(json.dumps(f) for f in frames) + "\n")
+    r = ReplayEngine(str(path))
+    got = [r.tick() for _ in range(5)]
+    assert [g["step"] for g in got] == [0, 1, 2, 3, 4]
+    assert all(g["mode"] == "replay" and g["replay"] and g["replay_length"] == 3 for g in got)
+    assert got[3]["nodes"] == got[0]["nodes"]                      # looped
+    r.set_controller("hpa")                                        # harmless
