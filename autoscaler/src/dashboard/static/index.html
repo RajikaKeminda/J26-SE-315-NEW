@@ -173,6 +173,7 @@ tr:last-child td{border-bottom:none}
   <div class="pill" id="breakerPill">agent in control</div>
   <div class="pill" id="policyPill">policy —</div>
   <div class="pill" id="shadowPill" style="display:none">shadow · no changes applied</div>
+  <div class="pill" id="topoPill" style="display:none" title="where the dependency graph comes from"></div>
   <div class="ctl">
     <button class="btn" id="btnPause" type="button">pause</button>
     <button class="btn" id="btnReset" type="button">reset</button>
@@ -192,13 +193,14 @@ tr:last-child td{border-bottom:none}
 <div class="grid">
   <div class="card">
     <h2>Service dependency graph</h2>
-    <div class="sub">Edge thickness is live latency pressure (EHG). The illuminated chain is the current critical path. Node label: pods × CPU cores.</div>
+    <div class="sub">Edge thickness is live latency pressure (EHG); on a real cluster the edges are learned from traces and thickness is call volume (the number is the decayed call count). The illuminated chain is the current critical path. Node label: pods × CPU cores.</div>
     <svg id="graph" viewBox="0 0 760 352" preserveAspectRatio="xMidYMid meet"></svg>
     <div class="legend">
       <span><i style="background:var(--crit)"></i>critical path</span>
       <span><i style="background:var(--agent)"></i>latency pressure</span>
       <span><i style="background:var(--line)"></i>dependency</span>
       <span>ring colour = CPU utilisation</span>
+      <span>dashed ring = observed only</span>
     </div>
   </div>
 
@@ -333,9 +335,15 @@ function drawGraph(d){
     if(!a||!b)return;
     const mx=(a.x+b.x)/2;
     const path=`M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}`;
-    const w=1+Math.min(1,e.latency_pressure)*5;
+    const maxCalls=Math.max(1,...d.edges.map(x=>x.calls||0));
+    const w=(e.calls!=null)?1+3.5*Math.log1p(e.calls)/Math.log1p(maxCalls)+Math.min(1,e.latency_pressure)*1.5
+                          :1+Math.min(1,e.latency_pressure)*5;
     const cls='edge '+(e.on_critical_path?'cp':(e.latency_pressure>0.35?'hot':''));
     svg.appendChild(el('path',{d:path,class:cls,'stroke-width':e.on_critical_path?Math.max(2.4,w):w}));
+    if(e.calls!=null && d.nodes.length<=16){
+      const lb=el('text',{class:'node-sub','text-anchor':'middle',x:mx,y:(a.y+b.y)/2-3,opacity:.75});
+      lb.textContent=Math.round(e.calls); svg.appendChild(lb);
+    }
     if(e.on_critical_path){
       const p=el('circle',{class:'pulse',r:3.2});
       p.appendChild(el('animateMotion',{dur:'1.9s',repeatCount:'indefinite',path:path}));
@@ -348,7 +356,9 @@ function drawGraph(d){
     const g=el('g',{transform:`translate(${p.x},${p.y})`});
     const fill=n.status==='critical'?'rgba(255,107,138,.16)':n.status==='warn'?'rgba(242,166,90,.14)':'rgba(69,208,192,.10)';
     g.appendChild(el('circle',{r:r,class:'node-core',fill:fill}));
-    g.appendChild(el('circle',{r:r,class:`node-ring ${n.status}${n.on_critical_path?' cp':''}`}));
+    const ring=el('circle',{r:r,class:`node-ring ${n.status}${n.on_critical_path?' cp':''}`});
+    if(n.controlled===false){ring.setAttribute('stroke-dasharray','4 3');g.setAttribute('opacity','.7');}
+    g.appendChild(ring);
     const frac=Math.max(0,Math.min(1,n.utilization));
     if(frac>0.02){
       const R=r+5, ang=-Math.PI/2+Math.min(frac,0.999)*2*Math.PI, large=frac>0.5?1:0;
@@ -463,6 +473,15 @@ function drawStatus(d){
   else if(b.className==='stale'){b.className='';b.textContent='';}
   $('policyPill').textContent='policy · '+d.policy;
   $('shadowPill').style.display=d.shadow?'':'none';
+  const tp=$('topoPill');
+  if(d.topology){
+    const t=d.topology, live=t.source==='jaeger-live';
+    const age=t.updated_at?Math.max(0,Math.round(Date.now()/1000-t.updated_at)):null;
+    tp.style.display=''; tp.className='pill'+(live?' on':'');
+    tp.textContent=(live?'topology · live from traces':'topology · '+(t.source==='jaeger'?'merged with traces':'declared'))
+      +` · ${t.services} services · ${t.edges} edges`+(live&&age!==null?` · updated ${age}s ago`:'')
+      +(t.controlled<t.services?` · ${t.controlled} controlled`:'');
+  } else tp.style.display='none';
   $('btnPause').textContent=d.paused?'resume':'pause';
   if($('selController').value!==d.controller && document.activeElement!==$('selController')) $('selController').value=d.controller;
 }

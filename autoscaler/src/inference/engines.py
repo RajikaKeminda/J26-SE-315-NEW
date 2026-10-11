@@ -95,6 +95,7 @@ class BaseEngine:
         self.controller_name = controller if (controller != "mo_td3" or agent is not None) else "hpa"
         self.step_i = 0
         self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
+        self.edge_calls = {}
 
     # -- control surface ------------------------------------------------
     def set_controller(self, name):
@@ -112,6 +113,9 @@ class BaseEngine:
 
     def _rebuild_controller(self):
         self.controller = make_controller(self.controller_name, self.services, self.agent, self.w)
+
+    def _controlled(self, svc):
+        return not config.CONTROLLED_SERVICES or svc in config.CONTROLLED_SERVICES
 
     # -- payload --------------------------------------------------------
     def _push_history(self, e2e, cost, rps, slo_ms):
@@ -135,6 +139,7 @@ class BaseEngine:
                 on_path = (caller in crit_path and callee in crit_path
                            and crit_path.index(callee) - crit_path.index(caller) == 1)
                 edges.append({"source": caller, "target": callee, "traffic_share": round(share, 3),
+                              "calls": self.edge_calls.get(f"{caller}->{callee}"),
                               "latency_pressure": round(float(ehg[idx[caller], idx[callee]]), 3),
                               "on_critical_path": on_path})
 
@@ -151,6 +156,7 @@ class BaseEngine:
                 "requests": round(m["requests"], 1), "utilization": round(util, 3),
                 "mem_utilization": round(m.get("mem_utilization", 0.0), 3),
                 "on_critical_path": s in crit_path, "is_entry": s == entry,
+                "controlled": self._controlled(s),
                 "proposed_delta": int(prop.get("dr", 0)), "applied_delta": int(app.get("dr", 0)),
                 "proposed_cpu": round(prop.get("cpu", m["cpu"]), 3), "applied_cpu": round(app.get("cpu", m["cpu"]), 3),
                 "proposed_mem": round(prop.get("mem", m["mem"])), "applied_mem": round(app.get("mem", m["mem"])),
@@ -272,6 +278,13 @@ class LiveEngine(BaseEngine):
         self.services, self.entry = list(config.SERVICES), config.ENTRY_SERVICE
         self.call_graph = {k: list(v) for k, v in config.CALL_GRAPH.items()}
         self.autodiscover = config.AUTODISCOVER_TOPOLOGY if autodiscover is None else autodiscover
+        self.live_topology = None
+        if config.METRICS_SOURCE == "trainticket":                  # graph learned only from live traces
+            from src.topology_intel.live_topology import LiveTopology
+            self.live_topology = LiveTopology(self.entry, config.TOPOLOGY_HALF_LIFE_S,
+                                              config.TOPOLOGY_TTL_S, config.TOPOLOGY_MIN_CALLS)
+            self.autodiscover = False
+        self.edge_calls = {}
         self.topology_source = "config"
         self.builder = LiveStateBuilder(self.services, self.entry, self.call_graph,
                                         priors={s: self.topology.work(s) for s in self.services})
@@ -317,6 +330,43 @@ class LiveEngine(BaseEngine):
                 print(f"[live] topology discovery added services: {added}")
         self.topology_source = "jaeger"
 
+    def _update_live_topology(self):
+        """Fold this window's traces into the live graph; services = reachable from the entry AND backed by a
+        readable Deployment (a traced service without one - a database, a sidecar - is external, not an error).
+        Returns the Kubernetes state of the services kept."""
+        lt = self.live_topology
+        lt.update(getattr(self._prom, "last_traces", []) or [])
+        candidates = lt.services()
+        state = self._k8s.get_state(candidates)
+        if self.entry not in state:
+            raise RuntimeError(f"entry service {self.entry} has no readable Deployment")
+        services = [s for s in candidates if s in state]
+        graph = lt.call_graph(services)
+        self.edge_calls = {f"{a}->{b}": round(c, 1) for (a, b), c in lt.observed_calls().items()
+                           if a in graph and b in dict(graph[a])}
+        if services != self.services or graph != self.call_graph:
+            added = [s for s in services if s not in self.services]
+            removed = [s for s in self.services if s not in services]
+            self.services, self.call_graph = services, graph
+            self.guard.services = services
+            self.guard.budget = config.live_budget(len(services))
+            self.builder.set_topology(services, self.entry, graph)
+            self._rebuild_controller()
+            if added or removed:
+                print(f"[live] topology changed: +{added} -{removed} ({len(services)} services)")
+        self.topology_source = "jaeger-live"
+        return {s: state[s] for s in services}
+
+    def _topology_info(self):
+        lt = self.live_topology
+        n_edges = sum(len(t) for t in self.call_graph.values())
+        info = {"source": self.topology_source, "services": len(self.services), "edges": n_edges,
+                "controlled": sum(1 for s in self.services if self._controlled(s))}
+        if lt is not None:
+            info.update(updated_at=lt.updated_at, traces_in_window=lt.last_window_traces,
+                        half_life_s=lt.half_life_s, ttl_s=lt.ttl_s)
+        return info
+
     # -- stale hold --------------------------------------------------------
     def _hold(self, reason):
         """Payload for a tick where we refuse to act on missing data."""
@@ -344,7 +394,7 @@ class LiveEngine(BaseEngine):
                               self.guard.breaker_open)
             p["step"] = step
         p.update(stale=True, stale_reason=reason, metrics_age_s=age, shadow=self.shadow,
-                 topology_source=self.topology_source)
+                 topology_source=self.topology_source, topology=self._topology_info())
         return p
 
     # -- main tick ----------------------------------------------------------
@@ -354,9 +404,14 @@ class LiveEngine(BaseEngine):
 
         try:
             prom = self._prom.collect()
-            k8s = self._k8s.get_state(self.services)
+            if self.live_topology is not None:
+                k8s = self._update_live_topology()
+            else:
+                k8s = self._k8s.get_state(self.services)
         except Exception as e:           # Prometheus down, kubeconfig missing, API unreachable
             return self._hold(f"cluster read failed: {e}")
+        if self.live_topology is not None and len(self.services) < 2:
+            return self._hold("discovering topology from traces - no cross-service calls seen yet")
         missing = [s for s in self.services if s not in k8s]
         if missing:
             return self._hold(f"cannot read deployment(s): {', '.join(missing)}")
@@ -385,6 +440,10 @@ class LiveEngine(BaseEngine):
         approved, reasons = self.guard.filter(proposals, metrics, self.step_i,
                                               physical_only=_is_baseline(self.controller))
 
+        for svc in list(approved):
+            if not self._controlled(svc):
+                approved[svc] = {"dr": 0, "cpu": metrics[svc]["cpu"], "mem": metrics[svc]["mem"]}
+                reasons[svc] = "observed only (not in CONTROLLED_SERVICES)"
         for svc, a in approved.items():
             if (a["dr"] or a["cpu"] != metrics[svc]["cpu"] or a["mem"] != metrics[svc]["mem"]) and not self.shadow:
                 try:
@@ -401,7 +460,7 @@ class LiveEngine(BaseEngine):
                                  "balance": pen["balance_penalty"]},
                                 rps, slo_ms, self.guard.budget, self.call_graph, self.entry,
                                 self.services, self.guard.breaker_open,
-                                topology_source=self.topology_source)
+                                topology_source=self.topology_source, topology=self._topology_info())
         self.step_i += 1
         self._last_payload = payload
         return payload
