@@ -82,7 +82,40 @@ TRAINTICKET14 = Topology(
              "ts-security": 15.0, "ts-user": 10.0},
 )
 
-TOPOLOGIES = {t.name: t for t in (DEMO6, TRAINTICKET14)}
+def _shares(counts: dict) -> list:
+    total = sum(counts.values())
+    return [(callee, c / total) for callee, c in counts.items()]
+
+
+# The REAL Train-Ticket (46 Java/Spring services, minikube on a separate machine). Only the services
+# that emit OpenTelemetry traces can be observed, so those 11 are the ones the agent may control; this
+# is a WHITELIST (the agent patches Deployments, so it must be told what it is allowed to touch).
+# The call graph below is only a SEED, taken from call counts observed in Jaeger traces of the booking
+# flows; with AUTODISCOVER_TOPOLOGY=1 it is re-derived from live traces and replaces these edges.
+# Service names are the Kubernetes Deployment names. CPU cost per request is unknown until measured.
+TRAINTICKET_LIVE = Topology(
+    name="trainticket-live",
+    services=["ts-gateway-service", "ts-preserve-service", "ts-travel-service", "ts-basic-service",
+              "ts-seat-service", "ts-order-service", "ts-security-service", "ts-contacts-service",
+              "ts-station-service", "ts-train-service", "ts-route-service"],
+    entry="ts-gateway-service",
+    call_graph={
+        "ts-gateway-service": _shares({"ts-contacts-service": 55, "ts-order-service": 50, "ts-preserve-service": 29,
+                                       "ts-travel-service": 27, "ts-security-service": 13, "ts-seat-service": 13,
+                                       "ts-basic-service": 13}),
+        "ts-preserve-service": _shares({c: 1 for c in ("ts-security-service", "ts-contacts-service", "ts-seat-service",
+                                                      "ts-basic-service", "ts-travel-service", "ts-order-service")}),
+        "ts-travel-service": _shares({"ts-seat-service": 112, "ts-basic-service": 56}),
+        "ts-basic-service": _shares({"ts-station-service": 169, "ts-train-service": 98, "ts-route-service": 98}),
+        "ts-seat-service": [("ts-order-service", 1.0)],
+        "ts-security-service": [("ts-order-service", 1.0)],
+        "ts-order-service": [], "ts-contacts-service": [], "ts-station-service": [],
+        "ts-train-service": [], "ts-route-service": [],
+    },
+    work_ms={},                       # measured online by LiveStateBuilder; DEFAULT_WORK_MS until then
+)
+
+TOPOLOGIES = {t.name: t for t in (DEMO6, TRAINTICKET14, TRAINTICKET_LIVE)}
 
 
 def get_topology(name: str) -> Topology:

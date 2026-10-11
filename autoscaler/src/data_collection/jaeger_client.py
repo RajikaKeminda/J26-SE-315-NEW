@@ -28,19 +28,23 @@ from src import config
 from src.simulation.simulator import critical_path as find_critical_path
 
 
-def fetch_recent_traces(service: str, lookback_seconds: int, limit: int) -> list[dict]:
-    """Pulls the most recent traces for `service` from the real Jaeger backend."""
+def fetch_recent_traces(service: str, lookback_seconds: int, limit: int, strict: bool = False) -> list[dict]:
+    """Pulls the most recent traces for `service` from the real Jaeger backend. With strict=True a failed
+    query raises QueryFailed (the caller must not read it as "no traffic"); otherwise it returns []."""
     end_us = int(time.time() * 1_000_000)
     start_us = end_us - lookback_seconds * 1_000_000
     try:
         resp = requests.get(
             f"{config.JAEGER_QUERY_URL}/api/traces",
             params={"service": service, "start": start_us, "end": end_us, "limit": limit},
-            timeout=5,
+            timeout=config.JAEGER_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         return resp.json().get("data", [])
-    except requests.RequestException as e:
+    except (requests.RequestException, ValueError) as e:
+        if strict:
+            from src.data_collection.prometheus_client import QueryFailed
+            raise QueryFailed(f"jaeger: {e}") from e
         print(f"[jaeger_client] failed to fetch traces: {e}")
         return []
 
