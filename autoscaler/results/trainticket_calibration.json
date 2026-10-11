@@ -1,0 +1,772 @@
+{
+ "meta": {
+  "date": "2026-10-11",
+  "cluster": "minikube, 6 CPUs, 11.7 GiB, Train-Ticket 46 services (11 traced)",
+  "load": "ts-load.py, think 1.0 s, 10 min per level",
+  "load_client_req_per_s": {
+   "1 user": 2.5,
+   "2 users": 4.2,
+   "3 users": 6.1
+  },
+  "run4": "skipped: run 3 stressed the node (memory PSI peaked at 77%, MemAvailable min 493 MB)",
+  "node_stress_run3": "one stall around 20:54:40-20:56 (entry throughput fell to 1.1 rps, p95 5.6 s, Prometheus queries timed out); steady PSI 4-16%",
+  "data_quality": [
+   "run 3 CPU series are missing for order/basic/seat/station (cAdvisor scrapes missed under node stress) and are set to null",
+   "per-service rates come from traces (all requests sampled)",
+   "order's own latency rose between runs 1 and 2 while the order table grew"
+  ]
+ },
+ "levels": {
+  "idle": {
+   "e2e": {
+    "requests": 0.0,
+    "incl_latency_ms": 0.0,
+    "incl_p50_ms": 0.0,
+    "incl_p95_ms": 0.0,
+    "incl_p99_ms": 0.0,
+    "error_rate": 0.0,
+    "trace_samples": 0
+   },
+   "services": {
+    "nacosdb": {
+     "requests": 0.0,
+     "cpu_cores": 0.015,
+     "mem_mb": 259.644,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "rabbitmq": {
+     "requests": 0.0,
+     "cpu_cores": 0.004,
+     "mem_mb": 17.113,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "assurance": {
+     "requests": 0.0,
+     "cpu_cores": 0.006,
+     "mem_mb": 234.852,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "auth": {
+     "requests": 0.0,
+     "cpu_cores": 0.004,
+     "mem_mb": 224.594,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "basic": {
+     "requests": 0.0,
+     "cpu_cores": 0.011,
+     "mem_mb": 288.113,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "cancel": {
+     "requests": 0.0,
+     "cpu_cores": 0.0,
+     "mem_mb": 193.621,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "config": {
+     "requests": 0.0,
+     "cpu_cores": 0.006,
+     "mem_mb": 221.394,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "consign-price": {
+     "requests": 0.0,
+     "cpu_cores": 0.005,
+     "mem_mb": 223.188,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "consign": {
+     "requests": 0.0,
+     "cpu_cores": 0.005,
+     "mem_mb": 232.125,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "contacservice": {
+     "requests": 0.0,
+     "cpu_cores": 0.011,
+     "mem_mb": 339.867,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "execute": {
+     "requests": 0.0,
+     "cpu_cores": 0.006,
+     "mem_mb": 182.648,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "food": {
+     "requests": 0.0,
+     "cpu_cores": 0.007,
+     "mem_mb": 251.387,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "gateway": {
+     "requests": 0.0,
+     "cpu_cores": 0.043,
+     "mem_mb": 322.188,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "inside-payment": {
+     "requests": 0.0,
+     "cpu_cores": 0.005,
+     "mem_mb": 242.934,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "notification": {
+     "requests": 0.0,
+     "cpu_cores": 0.005,
+     "mem_mb": 215.297,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "order-other": {
+     "requests": 0.0,
+     "cpu_cores": 0.0,
+     "mem_mb": 283.981,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "order": {
+     "requests": 0.0,
+     "cpu_cores": 0.016,
+     "mem_mb": 411.562,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "payment": {
+     "requests": 0.0,
+     "cpu_cores": 0.004,
+     "mem_mb": 226.711,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "preserve-other": {
+     "requests": 0.0,
+     "cpu_cores": 0.006,
+     "mem_mb": 202.004,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "preserve": {
+     "requests": 0.0,
+     "cpu_cores": 0.013,
+     "mem_mb": 293.691,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "price": {
+     "requests": 0.0,
+     "cpu_cores": 0.007,
+     "mem_mb": 226.836,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "rebook": {
+     "requests": 0.0,
+     "cpu_cores": 0.004,
+     "mem_mb": 184.703,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "route": {
+     "requests": 0.0,
+     "cpu_cores": 0.011,
+     "mem_mb": 333.723,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "seat": {
+     "requests": 0.0,
+     "cpu_cores": 0.013,
+     "mem_mb": 290.488,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "security": {
+     "requests": 0.0,
+     "cpu_cores": 0.014,
+     "mem_mb": 339.496,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "station-food": {
+     "requests": 0.0,
+     "cpu_cores": 0.004,
+     "mem_mb": 218.434,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "station": {
+     "requests": 0.0,
+     "cpu_cores": 0.011,
+     "mem_mb": 332.816,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "train-food": {
+     "requests": 0.0,
+     "cpu_cores": 0.005,
+     "mem_mb": 215.43,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "train": {
+     "requests": 0.0,
+     "cpu_cores": 0.014,
+     "mem_mb": 330.094,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "travel": {
+     "requests": 0.0,
+     "cpu_cores": 0.009,
+     "mem_mb": 346.984,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "travel2": {
+     "requests": 0.0,
+     "cpu_cores": 0.0,
+     "mem_mb": 248.949,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "ui-dashboard": {
+     "requests": 0.0,
+     "cpu_cores": 0.0,
+     "mem_mb": 2.969,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "user": {
+     "requests": 0.0,
+     "cpu_cores": 0.003,
+     "mem_mb": 230.898,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "verification-code": {
+     "requests": 0.0,
+     "cpu_cores": 0.003,
+     "mem_mb": 178.508,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    },
+    "tsdb": {
+     "requests": 0.0,
+     "cpu_cores": 0.016,
+     "mem_mb": 361.621,
+     "own_latency_ms": 0.0,
+     "incl_p95_ms": 0.0
+    }
+   }
+  },
+  "1 user": {
+   "e2e": {
+    "requests": 2.27,
+    "incl_latency_ms": 202.43,
+    "incl_p50_ms": 98.39,
+    "incl_p95_ms": 819.38,
+    "incl_p99_ms": 944.45,
+    "error_rate": 0.0,
+    "trace_samples": 68
+   },
+   "services": {
+    "basic": {
+     "requests": 0.6,
+     "cpu_cores": 0.025,
+     "mem_mb": 288.344,
+     "own_latency_ms": 17.162,
+     "incl_p95_ms": 76.04
+    },
+    "contacservice": {
+     "requests": 0.6,
+     "cpu_cores": 0.009,
+     "mem_mb": 340.406,
+     "own_latency_ms": 7.594,
+     "incl_p95_ms": 14.755
+    },
+    "gateway": {
+     "requests": 2.267,
+     "cpu_cores": 0.086,
+     "mem_mb": 323.066,
+     "own_latency_ms": 51.199,
+     "incl_p95_ms": 819.385
+    },
+    "order": {
+     "requests": 1.6,
+     "cpu_cores": 0.129,
+     "mem_mb": 411.836,
+     "own_latency_ms": 102.278,
+     "incl_p95_ms": 151.53
+    },
+    "route": {
+     "requests": 0.6,
+     "cpu_cores": 0.014,
+     "mem_mb": 334.125,
+     "own_latency_ms": 9.578,
+     "incl_p95_ms": 17.706
+    },
+    "seat": {
+     "requests": 0.933,
+     "cpu_cores": 0.027,
+     "mem_mb": 291.445,
+     "own_latency_ms": 29.404,
+     "incl_p95_ms": 167.012
+    },
+    "security": {
+     "requests": 0.3,
+     "cpu_cores": 0.021,
+     "mem_mb": 340.488,
+     "own_latency_ms": 97.926,
+     "incl_p95_ms": 280.437
+    },
+    "station": {
+     "requests": 1.033,
+     "cpu_cores": 0.019,
+     "mem_mb": 333.109,
+     "own_latency_ms": 4.111,
+     "incl_p95_ms": 8.539
+    },
+    "train": {
+     "requests": 0.6,
+     "cpu_cores": 0.016,
+     "mem_mb": 330.43,
+     "own_latency_ms": 5.259,
+     "incl_p95_ms": 9.161
+    },
+    "travel": {
+     "requests": 0.333,
+     "cpu_cores": 0.022,
+     "mem_mb": 351.16,
+     "own_latency_ms": 16.083,
+     "incl_p95_ms": 398.893
+    }
+   }
+  },
+  "2 users": {
+   "e2e": {
+    "requests": 3.87,
+    "incl_latency_ms": 252.59,
+    "incl_p50_ms": 115.96,
+    "incl_p95_ms": 1120.46,
+    "incl_p99_ms": 1472.22,
+    "error_rate": 0.0,
+    "trace_samples": 116.0
+   },
+   "services": {
+    "basic": {
+     "requests": 1.1,
+     "cpu_cores": 0.033,
+     "mem_mb": 288.779,
+     "own_latency_ms": 21.851,
+     "incl_p95_ms": 96.834
+    },
+    "contacservice": {
+     "requests": 0.95,
+     "cpu_cores": 0.016,
+     "mem_mb": 340.609,
+     "own_latency_ms": 8.674,
+     "incl_p95_ms": 18.575
+    },
+    "gateway": {
+     "requests": 3.867,
+     "cpu_cores": 0.124,
+     "mem_mb": 324.117,
+     "own_latency_ms": 59.077,
+     "incl_p95_ms": 1120.465
+    },
+    "order": {
+     "requests": 2.867,
+     "cpu_cores": 0.332,
+     "mem_mb": 413.02,
+     "own_latency_ms": 143.335,
+     "incl_p95_ms": 253.359
+    },
+    "preserve": {
+     "requests": 0.3,
+     "cpu_cores": 0.017,
+     "mem_mb": 294.336,
+     "own_latency_ms": 74.193,
+     "incl_p95_ms": 1636.028
+    },
+    "route": {
+     "requests": 1.1,
+     "cpu_cores": 0.017,
+     "mem_mb": 334.49,
+     "own_latency_ms": 9.816,
+     "incl_p95_ms": 20.511
+    },
+    "seat": {
+     "requests": 1.683,
+     "cpu_cores": 0.057,
+     "mem_mb": 295.103,
+     "own_latency_ms": 34.774,
+     "incl_p95_ms": 269.259
+    },
+    "security": {
+     "requests": 0.45,
+     "cpu_cores": 0.025,
+     "mem_mb": 345.598,
+     "own_latency_ms": 128.964,
+     "incl_p95_ms": 430.234
+    },
+    "station": {
+     "requests": 1.917,
+     "cpu_cores": 0.026,
+     "mem_mb": 333.795,
+     "own_latency_ms": 5.166,
+     "incl_p95_ms": 13.153
+    },
+    "train": {
+     "requests": 1.1,
+     "cpu_cores": 0.025,
+     "mem_mb": 330.791,
+     "own_latency_ms": 5.604,
+     "incl_p95_ms": 12.178
+    },
+    "travel": {
+     "requests": 0.583,
+     "cpu_cores": 0.027,
+     "mem_mb": 352.129,
+     "own_latency_ms": 18.957,
+     "incl_p95_ms": 603.03
+    }
+   }
+  },
+  "3 users": {
+   "e2e": {
+    "requests": 5.57,
+    "incl_latency_ms": 262.08,
+    "incl_p50_ms": 103.54,
+    "incl_p95_ms": 1126.25,
+    "incl_p99_ms": 1619.23,
+    "error_rate": 0.0,
+    "trace_samples": 167
+   },
+   "services": {
+    "basic": {
+     "requests": 1.467,
+     "cpu_cores": null,
+     "mem_mb": 292.473,
+     "own_latency_ms": 15.924,
+     "incl_p95_ms": 72.064
+    },
+    "contacservice": {
+     "requests": 1.433,
+     "cpu_cores": 0.017,
+     "mem_mb": 344.809,
+     "own_latency_ms": 6.25,
+     "incl_p95_ms": 12.517
+    },
+    "gateway": {
+     "requests": 5.567,
+     "cpu_cores": 0.151,
+     "mem_mb": 327.699,
+     "own_latency_ms": 51.359,
+     "incl_p95_ms": 1126.249
+    },
+    "order": {
+     "requests": 4.033,
+     "cpu_cores": null,
+     "mem_mb": 425.012,
+     "own_latency_ms": 164.978,
+     "incl_p95_ms": 344.093
+    },
+    "preserve": {
+     "requests": 0.4,
+     "cpu_cores": 0.0,
+     "mem_mb": 296.293,
+     "own_latency_ms": 51.287,
+     "incl_p95_ms": 1703.223
+    },
+    "route": {
+     "requests": 1.467,
+     "cpu_cores": 0.015,
+     "mem_mb": 335.723,
+     "own_latency_ms": 7.469,
+     "incl_p95_ms": 16.127
+    },
+    "seat": {
+     "requests": 2.233,
+     "cpu_cores": null,
+     "mem_mb": 302.391,
+     "own_latency_ms": 34.892,
+     "incl_p95_ms": 316.223
+    },
+    "security": {
+     "requests": 0.7,
+     "cpu_cores": 0.02,
+     "mem_mb": 347.199,
+     "own_latency_ms": 142.526,
+     "incl_p95_ms": 501.902
+    },
+    "station": {
+     "requests": 2.567,
+     "cpu_cores": null,
+     "mem_mb": 334.75,
+     "own_latency_ms": 3.763,
+     "incl_p95_ms": 8.257
+    },
+    "train": {
+     "requests": 1.467,
+     "cpu_cores": 0.016,
+     "mem_mb": 332.184,
+     "own_latency_ms": 4.26,
+     "incl_p95_ms": 9.299
+    },
+    "travel": {
+     "requests": 0.8,
+     "cpu_cores": 0.013,
+     "mem_mb": 353.66,
+     "own_latency_ms": 13.566,
+     "incl_p95_ms": 639.611
+    }
+   }
+  }
+ },
+ "endpoint_latency_ms_p50_p95": {
+  "1 user": {
+   "preserve": [
+    884,
+    1371
+   ],
+   "preserveOther": [
+    792,
+    1413
+   ],
+   "travel_trips_left": [
+    295,
+    472
+   ],
+   "travel2_trips_left": [
+    257,
+    491
+   ],
+   "order_refresh": [
+    196,
+    321
+   ],
+   "orderOther_refresh": [
+    145,
+    271
+   ],
+   "cancel": [
+    144,
+    257
+   ],
+   "inside_payment": [
+    145,
+    311
+   ],
+   "foods": [
+    104,
+    177
+   ],
+   "consigns": [
+    107,
+    183
+   ],
+   "rebook": [
+    68,
+    100
+   ],
+   "execute_collected": [
+    87,
+    160
+   ],
+   "execute_execute": [
+    68,
+    98
+   ],
+   "assurances": [
+    56,
+    89
+   ],
+   "contacts": [
+    56,
+    84
+   ],
+   "verifycode": [
+    43,
+    96
+   ],
+   "login": [
+    183,
+    251
+   ]
+  },
+  "2 users": {
+   "preserve": [
+    1183,
+    1962
+   ],
+   "preserveOther": [
+    975,
+    2027
+   ],
+   "travel_trips_left": [
+    407,
+    959
+   ],
+   "travel2_trips_left": [
+    326,
+    667
+   ],
+   "order_refresh": [
+    249,
+    454
+   ],
+   "orderOther_refresh": [
+    177,
+    356
+   ],
+   "cancel": [
+    154,
+    358
+   ],
+   "inside_payment": [
+    155,
+    290
+   ],
+   "foods": [
+    111,
+    255
+   ],
+   "consigns": [
+    122,
+    194
+   ],
+   "rebook": [
+    72,
+    133
+   ],
+   "execute_collected": [
+    93,
+    214
+   ],
+   "execute_execute": [
+    70,
+    125
+   ],
+   "assurances": [
+    56,
+    84
+   ],
+   "contacts": [
+    56,
+    85
+   ],
+   "verifycode": [
+    35,
+    157
+   ],
+   "login": [
+    197,
+    515
+   ]
+  },
+  "3 users": {
+   "preserve": [
+    1294,
+    2147
+   ],
+   "preserveOther": [
+    964,
+    1604
+   ],
+   "travel_trips_left": [
+    428,
+    796
+   ],
+   "travel2_trips_left": [
+    315,
+    664
+   ],
+   "order_refresh": [
+    266,
+    517
+   ],
+   "orderOther_refresh": [
+    191,
+    337
+   ],
+   "cancel": [
+    127,
+    307
+   ],
+   "inside_payment": [
+    126,
+    260
+   ],
+   "foods": [
+    92,
+    177
+   ],
+   "consigns": [
+    83,
+    164
+   ],
+   "rebook": [
+    64,
+    100
+   ],
+   "execute_collected": [
+    79,
+    139
+   ],
+   "execute_execute": [
+    63,
+    121
+   ],
+   "assurances": [
+    53,
+    71
+   ],
+   "contacts": [
+    52,
+    77
+   ],
+   "verifycode": [
+    22,
+    73
+   ],
+   "login": [
+    170,
+    358
+   ]
+  }
+ },
+ "fit_gateway_cpu": {
+  "idle_cores": 0.0432,
+  "work_ms": 19.8,
+  "r2": 1.0,
+  "cpu_at_levels": [
+   0.043,
+   0.086,
+   0.124,
+   0.151
+  ],
+  "rps_at_levels": [
+   0.0,
+   2.27,
+   3.87,
+   5.57
+  ]
+ },
+ "note": "cpu = idle + work*rps could only be fitted reliably for the gateway; other services' CPU is dominated by idle JVM CPU at these loads"
+}
