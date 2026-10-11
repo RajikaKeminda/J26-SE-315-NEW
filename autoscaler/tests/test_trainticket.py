@@ -181,3 +181,24 @@ def test_cluster_safety_scale_up_needs_node_memory_and_resize_can_be_disabled(mo
     assert approved["a"]["dr"] == approved["b"]["dr"] == 1
     approved, reasons = run(100)                        # below the reserve: nothing is added
     assert approved["a"]["dr"] == approved["b"]["dr"] == 0
+
+
+def test_critical_time_blames_the_last_running_call_and_sums_to_the_request():
+    acc, total = otel_traces.critical_time_by_service(booking())
+    assert total == pytest.approx(100.0) and sum(acc.values()) == pytest.approx(100.0)
+    # preserve ran seat (10..40) and basic (10..30) in parallel: only the later-finishing seat is on the critical path
+    assert acc.get("seat", 0) == pytest.approx(28.0) and acc.get("basic", 0) < 10.0
+    assert acc["pre"] > acc["gw"]                         # its own work and the database call
+
+
+def test_agents_critical_path_beats_random_chains_on_real_traces():
+    import json, os
+    from src.evaluation import critical_path_eval as E
+    path = os.path.join(os.path.dirname(__file__), "fixtures", "trainticket_traces.json")
+    r = E.evaluate(json.load(open(path)))
+    rows = {x["method"]: x for x in r["rows"]}
+    agent, rnd = rows["agent: DFS on own latency"], rows["baseline: random chain (expected)"]
+    assert agent["coverage"] > rnd["coverage"] + 0.2 and agent["top1"] > rnd["top1"] + 0.2
+    assert "ts-order-service" in agent["path"]            # order carries about three quarters of the downstream time
+    ev = E.evidence(json.load(open(path)), agent["path"], "ts-gateway-service")
+    assert ev["coverage"] == pytest.approx(agent["coverage"], abs=1e-3) and ev["slowest_trace"]

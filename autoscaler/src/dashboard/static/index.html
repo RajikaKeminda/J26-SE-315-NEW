@@ -211,6 +211,18 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<div class="card" id="evCard" style="display:none;margin-bottom:14px">
+  <h2>Critical path — verified against real requests</h2>
+  <div class="sub" id="evSub"></div>
+  <div class="grid" style="grid-template-columns:1fr 1.4fr;margin-bottom:0">
+    <div>
+      <div class="kv" id="evKv"></div>
+      <div class="small" id="evNote"></div>
+    </div>
+    <div id="evBars"></div>
+  </div>
+</div>
+
 <div class="grid" style="grid-template-columns:1.55fr 1fr">
   <div class="card">
     <h2>Services</h2>
@@ -372,6 +384,29 @@ function drawGraph(d){
     if(n.is_entry){const e2=el('text',{class:'node-sub','text-anchor':'middle',y:-r-10,fill:'#45D0C0'});e2.textContent='entry';g.appendChild(e2);}
     svg.appendChild(g);
   });
+}
+
+/* ---------- critical-path evidence: the agent's path vs what real requests waited for ---------- */
+function drawEvidence(d){
+  const card=$('evCard'), ev=d.critical_path_evidence;
+  if(!ev){card.style.display='none';return;}
+  card.style.display='';
+  const pct=x=>Math.round(x*100)+'%', onp=new Set(d.critical_path), nm=id=>short(id).replace(/^ts-/,'');
+  $('evSub').textContent=`${ev.requests} real requests in the last window left the entry service (${ev.entry_only_requests} more did not). `+
+    `For each one the end-to-end time was attributed to services by walking its trace backwards from the end. `+
+    `Bars: share of that downstream time per service; ● = on the agent's critical path.`;
+  const rnd=ev.random;
+  $('evKv').innerHTML=
+    `<span>time explained by the agent's path</span><span><b>${pct(ev.coverage)}</b></span>`+
+    (rnd?`<span>… by a random chain, same graph</span><span>${pct(rnd.coverage)}</span>`:'')+
+    `<span>slowest service of a request is on the path</span><span><b>${pct(ev.top1)}</b></span>`+
+    (rnd?`<span>… for a random chain</span><span>${pct(rnd.top1)}</span>`:'')+
+    `<span>agent's path</span><span>${d.critical_path.map(nm).join(' → ')}</span>`;
+  const url=ev.slowest_trace&&d.jaeger_url?`<a href="${d.jaeger_url}/trace/${ev.slowest_trace}" target="_blank" style="color:var(--agent)">open the slowest request of this window in Jaeger ↗</a>`:'';
+  $('evNote').innerHTML=url;
+  $('evBars').innerHTML=Object.entries(ev.share).slice(0,8).map(([sv,v])=>
+    `<div class="obj" style="grid-template-columns:96px 1fr 40px"><span class="k" style="text-transform:none;color:${onp.has(sv)?'var(--crit)':'var(--dim)'}">${nm(sv)}${onp.has(sv)?' ●':''}</span>`+
+    `<div class="bar"><i style="width:${Math.round(v*100)}%;background:${onp.has(sv)?'var(--crit)':'var(--line)'}"></i></div><span>${pct(v)}</span></div>`).join('');
 }
 
 /* ---------- decision feed ---------- */
@@ -622,7 +657,7 @@ function connect(){
     const d=JSON.parse(e.data);
     if(!d.nodes) return;
     paused=!!d.paused;
-    drawHeader(d); drawStatus(d); drawGraph(d); pushFeed(d); drawTable(d); drawChart(d); drawObjectives(d);
+    drawHeader(d); drawStatus(d); drawGraph(d); drawEvidence(d); pushFeed(d); drawTable(d); drawChart(d); drawObjectives(d);
   };
   ws.onclose=()=>{const p=$('livePill'); p.className='pill alert'; p.textContent='disconnected — retrying'; setTimeout(connect,2500);};
   ws.onopen=()=>{const p=$('livePill'); p.className='pill on'; p.innerHTML='<span class="dot"></span>live';};
