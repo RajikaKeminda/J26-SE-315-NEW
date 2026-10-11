@@ -223,3 +223,31 @@ def test_executed_actions_not_proposals_are_reported_for_learning():
 def test_topology_base_rps_is_identical_for_demo6_and_scales_for_bigger_apps():
     assert topology_base_rps(DEMO6) == pytest.approx(config.BASE_RPS)
     assert topology_base_rps(TRAINTICKET14) > config.BASE_RPS      # more budget, cheaper requests
+
+
+
+def test_opt_in_stabilisation_window_after_a_scale_up_and_while_the_newest_pod_is_young(monkeypatch):
+    from src import config
+    from src.safety.guards import SafetyGuard
+    monkeypatch.setattr(config, "SCALE_DOWN_AFTER_UP_STEPS", 5)
+    monkeypatch.setattr(config, "STEP_SECONDS", 30.0)
+    g = SafetyGuard(services=["a"], budget=100.0)
+    cur = {"a": {"replicas": 2, "cpu": 0.5, "mem": 256.0, "mem_utilization": 0.3}}
+    up, _ = g.filter({"a": {"dr": 1, "cpu": 0.5, "mem": 256.0}}, cur, step=10)
+    assert up["a"]["dr"] == 1
+    down, why = g.filter({"a": {"dr": -1, "cpu": 0.5, "mem": 256.0}}, cur, step=12)
+    assert down["a"]["dr"] == 0 and "after a scale-up" in why["a"]
+    down, _ = g.filter({"a": {"dr": -1, "cpu": 0.5, "mem": 256.0}}, cur, step=15)          # the window has passed
+    assert down["a"]["dr"] == -1
+    # a restarted agent remembers nothing, but the cluster knows the newest pod is 90 s old (window = 150 s)
+    fresh = SafetyGuard(services=["a"], budget=100.0)
+    young = {"a": dict(cur["a"], youngest_pod_s=90.0)}
+    down, why = fresh.filter({"a": {"dr": -1, "cpu": 0.5, "mem": 256.0}}, young, step=0)
+    assert down["a"]["dr"] == 0 and "newest pod is only 90 s old" in why["a"]
+    old = {"a": dict(cur["a"], youngest_pod_s=900.0)}
+    assert SafetyGuard(services=["a"], budget=100.0).filter({"a": {"dr": -1, "cpu": 0.5, "mem": 256.0}}, old, step=0)[0]["a"]["dr"] == -1
+
+
+def test_stabilisation_window_is_off_by_default_so_shipped_results_stay_valid():
+    from src import config
+    assert config.SCALE_DOWN_AFTER_UP_STEPS == 0

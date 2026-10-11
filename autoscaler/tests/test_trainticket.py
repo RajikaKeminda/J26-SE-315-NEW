@@ -202,3 +202,18 @@ def test_agents_critical_path_beats_random_chains_on_real_traces():
     assert "ts-order-service" in agent["path"]            # order carries about three quarters of the downstream time
     ev = E.evidence(json.load(open(path)), agent["path"], "ts-gateway-service")
     assert ev["coverage"] == pytest.approx(agent["coverage"], abs=1e-3) and ev["slowest_trace"]
+
+
+def test_missing_cpu_series_make_the_agent_hold_instead_of_reading_zero_load(monkeypatch):
+    from src.data_collection.prometheus_client import QueryFailed
+    def fake(q):
+        if "count by" in q:
+            return {s: 1 for s in ("gw", "a", "b", "c")}
+        if "cpu_usage" in q:
+            return {"gw": 0.4}                                             # three of four services have no CPU series
+        return {s: 300 * 2**20 for s in ("gw", "a", "b", "c")}
+    monkeypatch.setattr(trainticket_metrics, "_by_service", fake)
+    monkeypatch.setattr(trainticket_metrics.jaeger_client, "fetch_recent_traces", lambda *a, **k: [booking()] * 3)
+    monkeypatch.setattr(config, "ENTRY_SERVICE", "gw")
+    with pytest.raises(QueryFailed, match="too short for the scrape interval"):
+        trainticket_metrics.collect()

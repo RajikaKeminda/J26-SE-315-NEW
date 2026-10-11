@@ -22,6 +22,7 @@ from src import config
 from src.evaluation.evaluate import load_arm, tune_hpa
 from src.evaluation.metrics import evaluate_controller
 from src.rl_agent.controllers import RLController, RuleController
+from src.rl_agent.mo_td3 import MOTD3Agent
 from src.rl_agent.env import AutoscalerEnv
 from src.simulation.simulator import random_topology
 
@@ -43,8 +44,8 @@ def decision_cost(agent, topology, steps=10):
     return 1000 * float(np.median(t_dec)), 1000 * float(np.median(t_env))
 
 
-def run(sizes, n_topologies, n_episodes, arm="mo_td3_full", log=print):
-    agent = load_arm(arm, 0)
+def run(sizes, n_topologies, n_episodes, arm="mo_td3_full", log=print, ckpt=None):
+    agent = MOTD3Agent.load(ckpt) if ckpt else load_arm(arm, 0)
     assert agent is not None, f"no checkpoint for {arm}"
     out = []
     for n in sizes:
@@ -82,8 +83,9 @@ if __name__ == "__main__":
     ap.add_argument("--topologies", type=int, default=3)
     ap.add_argument("--episodes", type=int, default=8)
     ap.add_argument("--arm", default="mo_td3_full")
+    ap.add_argument("--ckpt", default=None, help="evaluate this checkpoint file instead of models/<arm>.pt")
     ap.add_argument("--out", default=os.path.join(config.RESULTS_DIR, "scale_results.json"))
     a = ap.parse_args()
-    rows = run(a.sizes, a.topologies, a.episodes, a.arm)
-    json.dump({"arm": a.arm, "episodes_per_topology": a.episodes, "rows": rows}, open(a.out, "w"), indent=1)
+    rows = run(a.sizes, a.topologies, a.episodes, a.arm, ckpt=a.ckpt)
+    json.dump({"arm": a.ckpt or a.arm, "episodes_per_topology": a.episodes, "rows": rows}, open(a.out, "w"), indent=1)
     print("saved", a.out)

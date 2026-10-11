@@ -454,6 +454,9 @@ class LiveEngine(BaseEngine):
             return self._hold(f"cluster read failed: {e}")
         if self.live_topology is not None and len(self.services) < 2:
             return self._hold("discovering topology from traces - no cross-service calls seen yet")
+        ages = self._k8s.pod_ages() if hasattr(self._k8s, "pod_ages") else {}
+        for s_, v_ in k8s.items():
+            v_["youngest_pod_s"] = ages.get(s_)
         missing = [s for s in self.services if s not in k8s]
         if missing:
             return self._hold(f"cannot read deployment(s): {', '.join(missing)}")

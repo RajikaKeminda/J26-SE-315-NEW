@@ -83,11 +83,24 @@ def allocation_cost(deployments, mem_cost_per_gib=0.13):
     return total
 
 
-def derive_timing(startup_s):
+def derive_timing(startup_s, scrape_interval_s=15.0):
+    """A rate() needs at least two samples inside its window; with scrape jitter that takes about four scrape intervals.
+    (A 60 s window over a 30 s scrape interval silently dropped the CPU of a saturated service on the real cluster.)"""
     step = min(60, max(10, int(round(startup_s / 3.0 / 5.0)) * 5))
+    window = int(max(30, 2 * step, 4 * scrape_interval_s))
     return {"STEP_SECONDS": step, "POLL_INTERVAL_SECONDS": step, "POD_STARTUP_SECONDS": round(startup_s),
-            "ROLLING_SECONDS_PER_REPLICA": round(startup_s), "METRIC_WINDOW": f"{max(30, 2 * step)}s",
+            "ROLLING_SECONDS_PER_REPLICA": round(startup_s), "METRIC_WINDOW": f"{window}s",
             "JAEGER_LOOKBACK_SECONDS": max(30, 2 * step), "JAEGER_TRACE_LIMIT": 200}
+
+
+def parse_duration_s(text, default=15.0):
+    """'30s' -> 30, '1m' -> 60, '2m30s' -> 150."""
+    import re
+    total, found = 0.0, False
+    for num, unit in re.findall(r"(\d+(?:\.\d+)?)(ms|s|m|h)", text or ""):
+        found = True
+        total += float(num) * {"ms": 0.001, "s": 1, "m": 60, "h": 3600}[unit]
+    return total if found else default
 
 
 # ------------------------------------------------------------------------------------------------
@@ -114,6 +127,12 @@ def probe_prometheus(prometheus, namespace, get=http_json):
     alloc = scalar('sum(kube_node_status_allocatable{resource="memory"})')
     used = scalar('sum(container_memory_working_set_bytes{id="/"})')
     found["node_headroom_mb"] = None if alloc is None or used is None else (alloc - used) / 2 ** 20
+    try:
+        targets = get(f"{prometheus}/api/v1/targets")["data"]["activeTargets"]
+        found["scrape_interval_s"] = max([parse_duration_s(t.get("scrapeInterval")) for t in targets
+                                          if "cadvisor" in str(t.get("labels", {}).get("job", ""))] or [15.0])
+    except Exception:
+        found["scrape_interval_s"] = 15.0
     ws = {}
     for r in prom_query(prometheus, f'avg by (pod) (container_memory_working_set_bytes{{namespace="{namespace}",pod!="",container=""}})', get):
         pod = r["metric"].get("pod", "")
@@ -204,9 +223,10 @@ def discover(namespace, prometheus, jaeger, entry=None, probes=None):
                   f"memory {bounds['MEM_MIN_MB']}-{bounds['MEM_MAX_MB']} MiB, replicas {bounds['MIN_REPLICAS']}-{bounds['MAX_REPLICAS']}"
                   + (f" (node has {prom['node_headroom_mb']:.0f} MiB free)" if prom["node_headroom_mb"] is not None else ""))
     startup = estimate_startup_seconds(startups)
-    timing = derive_timing(startup)
+    timing = derive_timing(startup, prom.get("scrape_interval_s", 15.0))
     settings.update(timing)
-    report.append(f"pod start-up measured on {len(startups)} pods: {startup:.0f} s -> control step {timing['STEP_SECONDS']} s")
+    report.append(f"pod start-up measured on {len(startups)} pods: {startup:.0f} s -> control step {timing['STEP_SECONDS']} s; "
+                  f"cAdvisor is scraped every {prom.get('scrape_interval_s', 15.0):.0f} s -> metric window {timing['METRIC_WINDOW']}")
     cost = allocation_cost(ctl_deps or deployments)
     if cost:
         n = max(1, len(controlled) or len(deployments))

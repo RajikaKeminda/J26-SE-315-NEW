@@ -70,6 +70,13 @@ def collect(window: str | None = None) -> dict[str, dict]:
             "trace_samples": t.get("samples", 0),
             "ok": True,
         }
+    with_pods = [s for s, d in out.items() if d["pods_scraped"]]
+    no_cpu = [s for s in with_pods if s not in res["cpu_cores"]]
+    if with_pods and len(no_cpu) > 0.25 * len(with_pods):
+        # A running pod always has a CPU series; if many are absent the rate window is shorter than the scrape interval allows
+        # (or cAdvisor is failing). Reading "no data" as "idle" could scale a saturated service DOWN, so hold instead.
+        raise QueryFailed(f"CPU series missing for {len(no_cpu)} of {len(with_pods)} services with pods "
+                          f"(e.g. {', '.join(sorted(no_cpu)[:3])}): METRIC_WINDOW {w} is too short for the scrape interval")
     return out
 
 

@@ -99,6 +99,7 @@ class LiveStateBuilder:
                 "work_ms": work,
                 "error_rate": m.get("error_rate", 0.0),
                 "backlog": 0.0,
+                "youngest_pod_s": k.get("youngest_pod_s"),
                 "latency_incl_ms": incl,
                 "latency_incl_p95_ms": max(incl_p95, incl),
             }

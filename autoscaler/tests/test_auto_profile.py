@@ -93,3 +93,9 @@ def test_entry_can_be_given_and_config_builds_a_live_topology_from_it(monkeypatc
         monkeypatch.delenv("AUTOSCALER_ENTRY_SERVICE")
         monkeypatch.delenv("METRICS_SOURCE")
         importlib.reload(config)
+
+
+def test_metric_window_is_several_scrape_intervals_long():
+    assert A.parse_duration_s("30s") == 30 and A.parse_duration_s("2m30s") == 150 and A.parse_duration_s(None) == 15.0
+    assert A.derive_timing(94, 30.0)["METRIC_WINDOW"] == "120s"           # 60 s over a 30 s scrape dropped CPU series
+    assert A.derive_timing(94, 5.0)["METRIC_WINDOW"] == "60s"             # but a fast scrape needs no more than 2 steps
