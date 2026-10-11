@@ -153,3 +153,89 @@ def window_stats(traces, limit=None, window_s=None, sample_rate=1.0):
             "samples": n,
         }
     return out
+
+
+# ---------------------------------------------------------------------------------------------------
+# Ground truth for the critical path: who was the request actually waiting for?
+# ---------------------------------------------------------------------------------------------------
+def critical_time_by_service(trace):
+    """Attributes the end-to-end time of ONE request to services, walking the span tree backwards from the
+    end of the request (the standard critical-path analysis of a trace):
+
+      * at a service's server span, the last-finishing call to another service is blamed for the time it
+        was running; the time before it started is blamed on whatever ran before it, recursively;
+      * calls that overlap an already-blamed later call (parallel calls) are not on the critical path;
+      * time not covered by any downstream call (own processing, database, network hops) is the service's own.
+
+    Returns ({service: milliseconds}, total_ms); the values sum to the duration of the root server span.
+    This is observed behaviour of the request, independent of the agent's graph - it is what the agent's
+    critical path is evaluated against (evaluation/critical_path_eval.py)."""
+    processes = trace.get("processes", {})
+    spans = trace.get("spans", [])
+    by_id = {s["spanID"]: s for s in spans}
+    svc = {s["spanID"]: processes.get(s.get("processID"), {}).get("serviceName") for s in spans}
+    children = defaultdict(list)
+    has_parent = set()
+    for s in spans:
+        for r in s.get("references", ()):
+            if r.get("refType") == "CHILD_OF" and r.get("spanID") in by_id:
+                children[r["spanID"]].append(s["spanID"])
+                has_parent.add(s["spanID"])
+                break
+
+    def callees(span_id, owner, out):
+        for c in children.get(span_id, ()):
+            if svc[c] != owner:
+                if _tag(by_id[c], "span.kind") == "server":
+                    out.append(c)
+                else:
+                    callees(c, owner, out)
+            else:
+                callees(c, owner, out)
+
+    def blame(span_id, hi, acc):
+        s = by_id[span_id]
+        owner = svc[span_id]
+        start, end = s["startTime"], min(s["startTime"] + s["duration"], hi)
+        if end <= start:
+            return
+        cs = []
+        callees(span_id, owner, cs)
+        cs = sorted(((by_id[c]["startTime"], by_id[c]["startTime"] + by_id[c]["duration"], c) for c in cs),
+                    key=lambda x: -x[1])
+        cur = end
+        for cstart, cend, cid in cs:
+            if cstart >= cur or cend <= start:
+                continue                                      # overlapped by a later call / outside the span
+            eff_end = min(cend, cur)
+            acc[owner] += max(0, cur - eff_end)               # time between this call's end and what came after
+            blame(cid, eff_end, acc)
+            cur = max(start, cstart)
+        acc[owner] += max(0, cur - start)
+
+    roots = [s["spanID"] for s in spans if _tag(s, "span.kind") == "server" and s["spanID"] not in has_parent
+             or (_tag(s, "span.kind") == "server" and svc[s["spanID"]] and not _has_cross_parent(s, by_id, svc))]
+    if not roots:
+        return {}, 0.0
+    root = max(roots, key=lambda r: by_id[r]["duration"])
+    acc = defaultdict(float)
+    blame(root, by_id[root]["startTime"] + by_id[root]["duration"], acc)
+    total = by_id[root]["duration"] / 1000.0
+    return {k: v / 1000.0 for k, v in acc.items() if k and v > 0}, total
+
+
+def _has_cross_parent(span, by_id, svc):
+    """True if some ancestor of `span` belongs to another service (so it is not a request root)."""
+    me = svc[span["spanID"]]
+    seen, cur = set(), span
+    while cur is not None and cur["spanID"] not in seen:
+        seen.add(cur["spanID"])
+        parent = None
+        for r in cur.get("references", ()):
+            if r.get("refType") == "CHILD_OF" and r.get("spanID") in by_id:
+                parent = by_id[r["spanID"]]
+                break
+        if parent is not None and svc[parent["spanID"]] != me:
+            return True
+        cur = parent
+    return False

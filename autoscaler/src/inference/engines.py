@@ -382,6 +382,17 @@ class LiveEngine(BaseEngine):
                 approved[s]["dr"] = 0
                 reasons[s] = why or f"scale-up blocked: node memory headroom ({max(room, 0):.0f} MiB left, need {need:.0f})"
 
+    def _critical_path_evidence(self, obs):
+        """Checks the current critical path against the real requests of this window (needs OpenTelemetry traces)."""
+        traces = getattr(self._prom, "last_traces", None)
+        if not traces:
+            return None
+        try:
+            from src.evaluation.critical_path_eval import evidence
+            return evidence(traces, obs["critical_path"], self.entry, self.call_graph)
+        except Exception:                        # never let an explanation break the control loop
+            return None
+
     def _topology_info(self):
         lt = self.live_topology
         n_edges = sum(len(t) for t in self.call_graph.values())
@@ -486,7 +497,9 @@ class LiveEngine(BaseEngine):
                                  "balance": pen["balance_penalty"]},
                                 rps, slo_ms, self.guard.budget, self.call_graph, self.entry,
                                 self.services, self.guard.breaker_open,
-                                topology_source=self.topology_source, topology=self._topology_info())
+                                topology_source=self.topology_source, topology=self._topology_info(),
+                                critical_path_evidence=self._critical_path_evidence(obs),
+                                jaeger_url=config.JAEGER_PUBLIC_URL)
         self.step_i += 1
         self._last_payload = payload
         return payload

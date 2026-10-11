@@ -39,6 +39,7 @@ NAMESPACE = os.environ.get("AUTOSCALER_NAMESPACE", "autoscaler-poc")
 # Observability endpoints (assume `kubectl port-forward`, see README)
 # ---------------------------------------------------------------------------
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
+JAEGER_PUBLIC_URL = os.environ.get("JAEGER_PUBLIC_URL", os.environ.get("JAEGER_QUERY_URL", "http://localhost:16686"))   # link target for the browser
 JAEGER_QUERY_URL = os.environ.get("JAEGER_QUERY_URL", "http://localhost:16686")
 PROMETHEUS_TIMEOUT_SECONDS = float(os.environ.get("PROMETHEUS_TIMEOUT_SECONDS", "5"))   # raise over an SSH tunnel
 METRIC_WINDOW = os.environ.get("METRIC_WINDOW", "10s")     # PromQL range for rates/quantiles
