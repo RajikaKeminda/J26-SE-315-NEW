@@ -106,7 +106,34 @@ TRAINTICKET_LIVE = Topology(
     },
 )
 
-TOPOLOGIES = {t.name: t for t in (DEMO6, TRAINTICKET14, TRAINTICKET_LIVE)}
+# The same application as a FIXED topology for the simulator (training and evaluation of the policy): the call graph
+# LEARNED from 253 real traces of the live cluster (tests/fixtures/trainticket_traces.json, 2026-10-11) and the CPU cost per
+# request measured there. The simulator routes each external request along ONE chain chosen by these shares, which is exact
+# for the gateway (one downstream per request type) and an approximation for services that call several in sequence.
+TRAINTICKET_SIM = Topology(
+    name="trainticket-sim",
+    services=["ts-gateway-service", "ts-basic-service", "ts-contacts-service", "ts-order-service", "ts-preserve-service",
+              "ts-route-service", "ts-seat-service", "ts-security-service", "ts-station-service", "ts-train-service",
+              "ts-travel-service"],
+    entry="ts-gateway-service",
+    call_graph={
+        "ts-gateway-service": [("ts-basic-service", 0.0738), ("ts-contacts-service", 0.2685), ("ts-order-service", 0.2953),
+                               ("ts-preserve-service", 0.1074), ("ts-seat-service", 0.0738), ("ts-security-service", 0.0738),
+                               ("ts-travel-service", 0.1074)],
+        "ts-basic-service": [("ts-route-service", 0.2682), ("ts-station-service", 0.4636), ("ts-train-service", 0.2682)],
+        "ts-preserve-service": [(c, 1 / 6) for c in ("ts-basic-service", "ts-contacts-service", "ts-order-service",
+                                                     "ts-seat-service", "ts-security-service", "ts-travel-service")],
+        "ts-seat-service": [("ts-order-service", 1.0)],
+        "ts-security-service": [("ts-order-service", 1.0)],
+        "ts-travel-service": [("ts-basic-service", 1 / 3), ("ts-seat-service", 2 / 3)],
+        "ts-contacts-service": [], "ts-order-service": [], "ts-route-service": [], "ts-station-service": [], "ts-train-service": [],
+    },
+    work_ms={"ts-gateway-service": 14.4, "ts-basic-service": 17.1, "ts-contacts-service": 8.6, "ts-order-service": 81.6,
+             "ts-preserve-service": 15.0, "ts-route-service": 13.0, "ts-seat-service": 18.4, "ts-security-service": 18.7,
+             "ts-station-service": 6.6, "ts-train-service": 10.0, "ts-travel-service": 24.9},
+)
+
+TOPOLOGIES = {t.name: t for t in (DEMO6, TRAINTICKET14, TRAINTICKET_LIVE, TRAINTICKET_SIM)}
 
 
 def get_topology(name: str) -> Topology:

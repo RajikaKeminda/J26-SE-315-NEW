@@ -337,7 +337,13 @@ class LiveEngine(BaseEngine):
         lt = self.live_topology
         lt.update(getattr(self._prom, "last_traces", []) or [])
         candidates = lt.services()
-        state = self._k8s.get_state(candidates)
+        traced = set(candidates)
+        if config.OBSERVE_UNTRACED and hasattr(self._k8s, "get_all_state"):
+            everything = self._k8s.get_all_state()
+            state = {s: v for s, v in everything.items() if s in traced or v["ready"] > 0}
+            candidates = candidates + sorted(s for s in state if s not in traced)       # untraced: isolated nodes
+        else:
+            state = self._k8s.get_state(candidates)
         if self.entry not in state:
             raise RuntimeError(f"entry service {self.entry} has no readable Deployment")
         services = [s for s in candidates if s in state]
@@ -503,6 +509,38 @@ class LiveEngine(BaseEngine):
         self.step_i += 1
         self._last_payload = payload
         return payload
+
+
+class ReplayEngine(BaseEngine):
+    """Plays back payloads recorded from a real run (src/dashboard/record.py), in a loop. A safety net for a presentation:
+    if the cluster or the network is unavailable the control room still shows exactly what a real run looked like,
+    and says so (mode "replay", a banner on the page). It computes nothing and touches no cluster."""
+    mode = "replay"
+
+    def __init__(self, path, agent=None, policy_name=None, controller="mo_td3", w=config.DEFAULT_PREFERENCE):
+        super().__init__(agent, policy_name, controller, w, shadow=True)
+        import json
+        with open(path) as f:
+            self.frames = [json.loads(l) for l in f if l.strip()]
+        self.frames = [p for p in self.frames if p.get("nodes")]
+        if not self.frames:
+            raise ValueError(f"{path}: no recorded payloads")
+        self.services = [n["id"] for n in self.frames[0]["nodes"]]
+        self.call_graph, self.entry = {}, self.frames[0]["nodes"][0]["id"]
+        self._rebuild_controller = lambda: None
+        self.controller = None
+
+    def reset(self, scenario=None):
+        self.step_i = 0
+
+    def set_controller(self, name):
+        pass                                                 # a recording cannot change its mind
+
+    def tick(self):
+        p = dict(self.frames[self.step_i % len(self.frames)])
+        p.update(step=self.step_i, mode="replay", replay=True, replay_length=len(self.frames), timestamp=time.time())
+        self.step_i += 1
+        return p
 
 
 def slo_for_live(call_graph, entry):

@@ -12,7 +12,7 @@ topology in use is described by `src/topologies.py`; the shared policy
 
 import os
 
-from src.topologies import DEMO6, get_topology
+from src.topologies import DEMO6, Topology, get_topology
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # .../autoscaler
 
@@ -28,7 +28,11 @@ def _env_int(name, default):
 # ---------------------------------------------------------------------------
 # Active topology (the application deployed under k8s/01-services/)
 # ---------------------------------------------------------------------------
-TOPOLOGY = get_topology(os.environ.get("AUTOSCALER_TOPOLOGY", DEMO6.name))
+# Pointing the autoscaler at an application needs no code: name its entry service and the rest (services, call
+# graph) is learned from live traces. Otherwise a named topology from src/topologies.py is used.
+_ENTRY = os.environ.get("AUTOSCALER_ENTRY_SERVICE")
+TOPOLOGY = (Topology(name=f"live:{_ENTRY}", services=[_ENTRY], entry=_ENTRY, call_graph={_ENTRY: []})
+            if _ENTRY else get_topology(os.environ.get("AUTOSCALER_TOPOLOGY", DEMO6.name)))
 SERVICES = list(TOPOLOGY.services)
 ENTRY_SERVICE = TOPOLOGY.entry
 CALL_GRAPH = {k: list(v) for k, v in TOPOLOGY.call_graph.items()}
@@ -180,7 +184,8 @@ JAEGER_TIMEOUT_SECONDS = _env_float("JAEGER_TIMEOUT_SECONDS", 5.0)
 # Where per-service request rate / latency come from: "prometheus" (the demo services export
 # http_request_* metrics) or "trainticket" (OpenTelemetry spans in Jaeger + cAdvisor; see
 # data_collection/trainticket_metrics.py).
-METRICS_SOURCE = os.environ.get("METRICS_SOURCE", "prometheus")
+METRICS_SOURCE = {"otel": "trainticket"}.get(os.environ.get("METRICS_SOURCE", "prometheus"),
+                                                      os.environ.get("METRICS_SOURCE", "prometheus"))   # "otel" = any app with OpenTelemetry traces
 # Fraction of requests that are traced (rates computed from traces are divided by it).
 OTEL_SAMPLE_RATE = _env_float("OTEL_SAMPLE_RATE", 1.0)
 TRACE_WINDOW_SECONDS = 5          # proposal: aggregate traces over 5-second sliding windows
@@ -207,7 +212,7 @@ POLICY_PATH = os.path.join(MODELS_DIR, "shared_policy.pt")
 DEFAULT_ARM = "mo_td3_full"       # policy served when shared_policy.pt is absent
 RESULTS_PATH = os.path.join(RESULTS_DIR, "ablation_results.json")
 PARETO_PATH = os.path.join(RESULTS_DIR, "pareto_results.json")
-SIM_PARAMS_PATH = os.path.join(BASE_DIR, "src", "simulation", "sim_params.json")
+SIM_PARAMS_PATH = os.environ.get("SIM_PARAMS_PATH", os.path.join(BASE_DIR, "src", "simulation", "sim_params.json"))
 
 # Discover the call graph from live Jaeger traces instead of the declared one.
 AUTODISCOVER_TOPOLOGY = os.environ.get("AUTODISCOVER_TOPOLOGY", "0") == "1"
@@ -215,6 +220,9 @@ AUTODISCOVER_TOPOLOGY = os.environ.get("AUTODISCOVER_TOPOLOGY", "0") == "1"
 # Live topology (METRICS_SOURCE=trainticket): the graph is learned only from traces. Observed call counts
 # decay with this half-life; an edge not seen for TTL seconds is dropped; edges seen fewer than MIN_CALLS
 # (decayed) times are ignored as noise.
+# Also show the running Deployments that emit no traces, as isolated nodes (CPU and memory only, no call edges). They
+# are observed, never controlled unless listed in CONTROLLED_SERVICES.
+OBSERVE_UNTRACED = os.environ.get("OBSERVE_UNTRACED", "0") == "1"
 TOPOLOGY_HALF_LIFE_S = _env_float("TOPOLOGY_HALF_LIFE_S", 120.0)
 TOPOLOGY_TTL_S = _env_float("TOPOLOGY_TTL_S", 300.0)
 TOPOLOGY_MIN_CALLS = _env_float("TOPOLOGY_MIN_CALLS", 2.0)

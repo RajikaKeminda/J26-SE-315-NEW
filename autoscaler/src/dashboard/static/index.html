@@ -503,7 +503,8 @@ function drawHeader(d){
 }
 function drawStatus(d){
   const b=$('banner');
-  if(d.stale){b.className='stale';b.textContent='Holding — not acting: '+(d.stale_reason||'metrics unavailable')+
+  if(d.replay){b.className='stale';b.textContent='REPLAY of a recorded live run ('+d.replay_length+' steps, looping) — this is not the cluster right now';}
+  else if(d.stale){b.className='stale';b.textContent='Holding — not acting: '+(d.stale_reason||'metrics unavailable')+
       (d.metrics_age_s!=null?` (last good data ${d.metrics_age_s}s ago)`:'');}
   else if(b.className==='stale'){b.className='';b.textContent='';}
   $('policyPill').textContent='policy · '+d.policy;
