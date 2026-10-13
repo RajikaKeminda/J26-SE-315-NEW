@@ -142,6 +142,32 @@ downstream time only (the entry service is on every path, and time spent in the 
 Limits: 91 of the 253 requests left the gateway through traced services; `ts-order-service` carries about three quarters of the
 downstream time, so any path through it scores well. The live dashboard shows the same measurement for the current window.
 
+### Critical path: graph-level chain vs. CRISP-style critical shares (held out)
+
+Uber's CRISP (https://www.uber.com/us/en/blog/crisp-critical-path-analysis-for-microservice-architectures/) gives every sampled request its own
+critical path - replayed backwards from the end, charging the last-finishing call and ignoring parallel calls that finish earlier - and aggregates the
+time per service (and at P50/P95/P99). The agent's depth-first search instead finds ONE chain for the whole graph, weighted by mean own latency.
+`src/topology_intel/crisp.py` adds the CRISP-style view: a service's critical share (overall, in the slow tail, and per request type).
+
+Held-out comparison (`python -m src.evaluation.critical_path_eval`; 253 real requests, 5-fold x 20 repeats; the graph and every weight are learned on the training
+traces and scored on requests not seen; every method names the same number of services; downstream time only):
+
+| Method | Time explained | Slowest service of a request is on it | Same, slowest 20 % of requests |
+|---|---|---|---|
+| Current: DFS chain on mean own latency | 80.2 % | 90.1 % | 82.5 % |
+| DFS chain weighted by critical share | 79.7 % | 88.0 % | 75.9 % |
+| DFS chain weighted by tail critical share | 80.2 % | 90.0 % | 82.2 % |
+| Top services by critical share | 88.7 % | 98.5 % | 77.8 % |
+| Top services by tail critical share | 85.3 % | 90.1 % | 90.7 % |
+| **Top services per request type** | **95.6 %** | **99.7 %** | **91.0 %** |
+| Random chain (expected) | 47.3 % | 53.8 % | 41.4 % |
+
+What this shows: changing only the WEIGHTS of the chain search does not help; the gain comes from the representation - a ranked set of services instead of one chain, and
+one set per request type (a `contacts` request is 0 % covered by the chain). The overall ranking alone is worse than the chain in the slow tail, so the tail view matters.
+Limits: one application, 91 requests with downstream time, hindsight-free but small; the new view explains where requests wait - whether feeding it to the agent improves
+scaling decisions is NOT measured (it would need the simulator to produce the same shares and a retrain). It is available as an opt-in input
+(`CRITICAL_PATH_SOURCE=crisp`, off by default because the shipped models were trained with the chain) and always shown on the dashboard.
+
 ## Live orchestration on the real cluster (2026-10-11)
 
 Setup: `ts-order-service` limited to 0.3 core (an operator action, restored afterwards) so that it saturates at a load the node can take;

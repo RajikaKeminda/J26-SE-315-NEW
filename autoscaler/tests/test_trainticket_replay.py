@@ -90,3 +90,31 @@ def test_untraced_running_services_are_observed_as_isolated_nodes_never_controll
     assert not any(e["source"] == "ts-auth-service" or e["target"] == "ts-auth-service" for e in p["edges"])
     auth = next(n for n in p["nodes"] if n["id"] == "ts-auth-service")
     assert auth["controlled"] is False and all(a == "ts-order-service" for a, _ in engine._k8s.applied)
+
+
+def test_payload_carries_the_critical_profile_and_defaults_to_the_dfs_features(engine):
+    p = engine.tick()
+    prof = p["critical_profile"]
+    assert prof["requests"] > 20 and prof["coverage"] >= 0.9                  # the set explains at least 90 % of the downstream time
+    assert prof["set"][0] == "ts-order-service" and list(prof["overall"])[0] == "ts-order-service"
+    assert prof["types"] and all(len(t["top"]) <= 3 for t in prof["types"])
+    assert list(prof["tail"]) and sum(prof["overall"].values()) <= 1.0001
+    assert config.CRITICAL_PATH_SOURCE == "dfs"                               # the shipped models were trained with the DFS chain
+
+
+def test_crisp_features_have_the_same_shape_but_describe_the_measured_critical_set(engine, monkeypatch):
+    import numpy as np
+    base = engine.tick()
+    obs_dfs = engine._last_obs if hasattr(engine, "_last_obs") else None
+    from src.topology_intel.graph_builder import build_observation
+    metrics = {s: {"requests": 1.0, "latency_ms": 10.0 + i, "latency_p95_ms": 20.0, "utilization": 0.3, "replicas": 1, "cpu": 1.0,
+                   "mem": 800.0, "edge_p95": {}} for i, s in enumerate(engine.services)}
+    e2e = {"mean_ms": 100.0, "p50_ms": 90.0, "p95_ms": 200.0, "p99_ms": 300.0, "error_rate": 0.0}
+    args = (engine.services, engine.call_graph, engine.entry, metrics, e2e, 10.0, 33.0, 1400.0)
+    a = build_observation(*args)
+    b = build_observation(*args, critical_override={"set": ["ts-order-service"], "shares": {"ts-order-service": 0.74}})
+    assert a["X"].shape == b["X"].shape                                       # no retraining of the architecture needed
+    i = engine.services.index("ts-order-service")
+    assert b["X"][i, 15] == pytest.approx(0.74) and b["critical_path"] == [engine.entry, "ts-order-service"]
+    others = [j for j in range(len(engine.services)) if j != i and engine.services[j] != engine.entry]
+    assert all(b["X"][j, 14] == 0.0 for j in others)                          # off the critical set

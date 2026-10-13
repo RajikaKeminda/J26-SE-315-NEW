@@ -129,6 +129,76 @@ def evaluate(traces, entry="ts-gateway-service"):
             "rows": rows, "blame_share": _shares(blames)}
 
 
+def cross_validate(traces, entry="ts-gateway-service", folds=5, repeats=20, seed=0):
+    """Held-out comparison. In each fold the graph and every weight are learned from the training traces only, and the
+    result is scored on requests it never saw. Every method names the SAME number of downstream services (the length of the
+    current path), so no method wins by naming more of them. Returns {method: {coverage, top1, tail_coverage, ...}} with the mean
+    and the standard deviation over the repeats."""
+    import random
+    from src.topology_intel import crisp
+    rng = random.Random(seed)
+    names = ["current: DFS on mean own latency", "DFS weighted by critical share", "DFS weighted by tail critical share",
+             "top-k by mean own latency", "top-k critical share", "top-k tail critical share",
+             "top-k critical share per request type", "random chain (expected)"]
+    per_repeat = {n: {"coverage": [], "top1": [], "tail_coverage": []} for n in names}
+    for _ in range(repeats):
+        idx = list(range(len(traces)))
+        rng.shuffle(idx)
+        acc = {n: {"coverage": [], "top1": [], "tail_coverage": [], "w": []} for n in names}
+        for f in range(folds):
+            test_idx = set(idx[f::folds])
+            train = [traces[i] for i in idx if i not in test_idx]
+            test = crisp.requests_from_traces([traces[i] for i in test_idx], entry)
+            if len(test) < 3:
+                continue
+            services, graph = learn(train, entry)
+            own, _ = service_weights(train, entry)
+            prof = crisp.CriticalProfile(crisp.requests_from_traces(train, entry))
+            if not prof.overall:
+                continue
+            current = [x for x in critical_path_dfs(graph, entry, own)[1] if x != entry]
+            k = max(len(current), 1)
+            by_own = [x for x, _ in sorted(own.items(), key=lambda t: -t[1]) if x != entry][:k]
+            def chain(w):
+                """the chain found by the depth-first search with weights w, reduced to its k highest-weight services (never by position:
+                cutting a chain after k nodes could drop the service that matters, which sits at its end)"""
+                c = [x for x in crisp.chain_from_shares(graph, entry, w) if x != entry]
+                return sorted(c, key=lambda x: -w.get(x, 0.0))[:k]
+            sets = {
+                names[0]: lambda r: current,
+                names[1]: lambda r: chain(prof.overall),
+                names[2]: lambda r: chain(prof.tail),
+                names[3]: lambda r: by_own,
+                names[4]: lambda r: prof.top(k),
+                names[5]: lambda r: prof.top(k, "tail"),
+                names[6]: lambda r: prof.top(k, op=r.op),
+            }
+            test_tail = crisp.tail(test)
+            for n, pick in sets.items():
+                acc[n]["coverage"].append(st.mean(crisp.coverage([r], pick(r)) for r in test))
+                acc[n]["top1"].append(st.mean(crisp.top1([r], pick(r)) for r in test))
+                acc[n]["tail_coverage"].append(st.mean(crisp.coverage([r], pick(r)) for r in test_tail))
+                acc[n]["w"].append(len(test))
+            dist = path_distribution(graph, entry)
+            rn = names[7]
+            acc[rn]["coverage"].append(sum(p * crisp.coverage(test, [x for x in path if x != entry]) for path, p in dist))
+            acc[rn]["top1"].append(sum(p * crisp.top1(test, [x for x in path if x != entry]) for path, p in dist))
+            acc[rn]["tail_coverage"].append(sum(p * crisp.coverage(test_tail, [x for x in path if x != entry]) for path, p in dist))
+            acc[rn]["w"].append(len(test))
+        for n in names:
+            w = acc[n]["w"]
+            if w:
+                for key in ("coverage", "top1", "tail_coverage"):
+                    per_repeat[n][key].append(sum(a_ * b_ for a_, b_ in zip(acc[n][key], w)) / sum(w))
+    return {n: {key: (st.mean(v), st.pstdev(v)) for key, v in d.items() if v} for n, d in per_repeat.items()}
+
+
+def print_cross_validation(res):
+    print(f"{'method (same number of services for all)':44} {'coverage':>14} {'top-1 hit':>14} {'tail coverage':>14}")
+    for n, d in res.items():
+        print(f"{n:44} " + " ".join(f"{d[k][0] * 100:6.1f}% +-{d[k][1] * 100:4.1f}" for k in ("coverage", "top1", "tail_coverage")))
+
+
 def main(path):
     r = evaluate(json.load(open(path)))
     print(f"{r['traces']} real requests with downstream time ({r['traces_without_downstream_time']} more never left the "
@@ -143,4 +213,7 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "tests/fixtures/trainticket_traces.json")
+    path = sys.argv[1] if len(sys.argv) > 1 else "tests/fixtures/trainticket_traces.json"
+    main(path)
+    print("\nheld-out (5-fold x 20 repeats; graph and weights learned on the training traces only):")
+    print_cross_validation(cross_validate(json.load(open(path))))
