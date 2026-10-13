@@ -267,12 +267,14 @@ class LiveEngine(BaseEngine):
 
     def __init__(self, agent, policy_name=None, shadow=False, autodiscover=None,
                  controller="mo_td3", w=config.DEFAULT_PREFERENCE):
-        from src.data_collection import prometheus_client, jaeger_client
+        from src.data_collection import jaeger_client
         from src.inference.live_state import LiveStateBuilder
         from src.k8s_action import k8s_client
         if config.METRICS_SOURCE == "trainticket":
-            from src.data_collection import trainticket_metrics as prometheus_client   # OTel spans + cAdvisor
-        self._prom, self._jaeger, self._k8s = prometheus_client, jaeger_client, k8s_client
+            from src.data_collection import trainticket_metrics as metrics_source   # OTel spans + cAdvisor
+        else:
+            from src.data_collection import prometheus_client as metrics_source     # the demo app's own metrics
+        self._prom, self._jaeger, self._k8s = metrics_source, jaeger_client, k8s_client
         super().__init__(agent, policy_name, controller, w, shadow)
         self.topology = config.TOPOLOGY
         self.services, self.entry = list(config.SERVICES), config.ENTRY_SERVICE
@@ -287,7 +289,7 @@ class LiveEngine(BaseEngine):
         self.edge_calls = {}
         self.topology_source = "config"
         self.builder = LiveStateBuilder(self.services, self.entry, self.call_graph,
-                                        priors={s: self.topology.work(s) for s in self.services})
+                                        priors={**self.topology.work_ms, **{s: self.topology.work(s) for s in self.services}})
         self.guard = SafetyGuard(services=self.services, budget=config.live_budget(len(self.services)))
         self._last_ok_ts = None
         self._last_payload = None
@@ -508,6 +510,7 @@ class LiveEngine(BaseEngine):
         approved, reasons = self.guard.filter(proposals, metrics, self.step_i,
                                               physical_only=_is_baseline(self.controller))
 
+        guard_approved = {svc: dict(a) for svc, a in approved.items()}        # what the guard let through, before the cluster-level vetoes
         self._apply_cluster_safety(approved, reasons, metrics, prom)
         for svc in list(approved):
             if not self._controlled(svc):
@@ -521,6 +524,9 @@ class LiveEngine(BaseEngine):
                     reasons[svc] = f"k8s error: {e}"
                     approved[svc] = {"dr": 0, "cpu": metrics[svc]["cpu"], "mem": metrics[svc]["mem"]}
 
+        for svc, g in guard_approved.items():                                   # the guard must not count actions that never happened
+            a = approved.get(svc, g)
+            self.guard.revoke(svc, scale=a["dr"] != g["dr"], resize=(a["cpu"], a["mem"]) != (g["cpu"], g["mem"]))
         _, pen = rewards.objective_penalties(metrics, self.services, e2e, cost, self.guard.budget, slo_ms)
         rps = metrics[self.entry]["requests"]
         self._push_history(e2e, cost, rps, slo_ms)

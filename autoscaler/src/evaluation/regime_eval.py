@@ -15,7 +15,6 @@ search on a held-out seed range, exactly as in the main study.
 
 import argparse
 import json
-import os
 
 import numpy as np
 

@@ -388,11 +388,12 @@ function drawGraph(d){
 }
 
 /* ---------- critical-path evidence: the agent's path vs what real requests waited for ---------- */
+const esc=v=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));   // trace data is untrusted
 function drawEvidence(d){
   const card=$('evCard'), ev=d.critical_path_evidence;
   if(!ev){card.style.display='none';return;}
   card.style.display='';
-  const pct=x=>Math.round(x*100)+'%', onp=new Set(d.critical_path), nm=id=>short(id).replace(/^ts-/,'');
+  const pct=x=>Math.round(x*100)+'%', onp=new Set(d.critical_path), nm=id=>esc(short(id).replace(/^ts-/,''));
   $('evSub').textContent=`${ev.requests} real requests in the last window left the entry service (${ev.entry_only_requests} more did not). `+
     `For each one the end-to-end time was attributed to services by walking its trace backwards from the end. `+
     `Bars: share of that downstream time per service; ● = on the agent's critical path.`;
@@ -403,7 +404,7 @@ function drawEvidence(d){
     `<span>slowest service of a request is on the path</span><span><b>${pct(ev.top1)}</b></span>`+
     (rnd?`<span>… for a random chain</span><span>${pct(rnd.top1)}</span>`:'')+
     `<span>agent's path</span><span>${d.critical_path.map(nm).join(' → ')}</span>`;
-  const url=ev.slowest_trace&&d.jaeger_url?`<a href="${d.jaeger_url}/trace/${ev.slowest_trace}" target="_blank" style="color:var(--agent)">open the slowest request of this window in Jaeger ↗</a>`:'';
+  const url=ev.slowest_trace&&d.jaeger_url?`<a href="${encodeURI(d.jaeger_url)}/trace/${encodeURIComponent(ev.slowest_trace)}" target="_blank" rel="noopener" style="color:var(--agent)">open the slowest request of this window in Jaeger ↗</a>`:'';
   $('evNote').innerHTML=url;
   $('evBars').innerHTML=Object.entries(ev.share).slice(0,8).map(([sv,v])=>
     `<div class="obj" style="grid-template-columns:96px 1fr 40px"><span class="k" style="text-transform:none;color:${onp.has(sv)?'var(--crit)':'var(--dim)'}">${nm(sv)}${onp.has(sv)?' ●':''}</span>`+
@@ -416,8 +417,8 @@ function drawEvidence(d){
     `<span class="k" style="text-transform:none;color:${inSet.has(sv)?'var(--crit)':'var(--dim)'}">${nm(sv)}${inSet.has(sv)?' ●':''}</span>`+
     `${bar(cp.overall[sv],'var(--agent)')}${bar(cp.tail[sv],'var(--crit)')}`+
     `<span>${pct(cp.overall[sv]||0)} / ${pct(cp.tail[sv]||0)}</span></div>`).join('');
-  const types=cp.types.map(t=>`<tr><td>${t.op}</td><td>${t.n}</td><td>${Object.entries(t.top).map(([sv,v])=>nm(sv)+' '+pct(v)).join(', ')}</td></tr>`).join('');
-  box.innerHTML=`<div class="sub" style="margin:0 0 6px">Critical-path <b>share</b> per service, measured on the ${cp.requests} real requests of this window (CRISP-style: each request is replayed backwards from its end; `+
+  const types=cp.types.map(t=>`<tr><td>${esc(t.op)}</td><td>${Number(t.n)}</td><td>${Object.entries(t.top).map(([sv,v])=>nm(sv)+' '+pct(v)).join(', ')}</td></tr>`).join('');
+  box.innerHTML=`<div class="sub" style="margin:0 0 6px">Critical-path <b>share</b> per service, measured on the ${Number(cp.requests)} real requests of this window (CRISP-style: each request is replayed backwards from its end; `+
     `parallel calls that finish earlier are not blamed). Blue = all requests, red = the slowest 20 % · ● = the smallest set that explains ${pct(cp.coverage)} of the time.</div>${rows}`+
     (types?`<table class="tbl" style="margin-top:10px;width:100%"><thead><tr><th>request type</th><th>n</th><th>carries the downstream time</th></tr></thead><tbody>${types}</tbody></table>`:'');
 }

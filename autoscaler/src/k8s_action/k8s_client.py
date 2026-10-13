@@ -85,6 +85,16 @@ def _list_deployments(apps_v1, namespace):
         return None
 
 
+def _state_of(dep, svc):
+    limits = (_container(dep, svc).resources.limits or {}) if _container(dep, svc).resources else {}
+    return {
+        "replicas": dep.spec.replicas if dep.spec.replicas is not None else (dep.status.replicas or 0),
+        "ready": dep.status.ready_replicas or 0,
+        "cpu": parse_cpu(limits.get("cpu")) or app_config.CPU_DEFAULT,
+        "mem": parse_mem_mb(limits.get("memory")) or float(app_config.MEM_DEFAULT_MB),
+    }
+
+
 def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
     """Real state per Deployment: desired + ready replicas and the CPU/memory limits of
     the pod template (what a new pod will get). Services that cannot be read are omitted
@@ -105,13 +115,7 @@ def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
             except client.exceptions.ApiException as e:
                 print(f"[k8s_client] failed to read {svc}: {e.status} {e.reason}")
                 continue
-        limits = (_container(dep, svc).resources.limits or {}) if _container(dep, svc).resources else {}
-        state[svc] = {
-            "replicas": dep.spec.replicas if dep.spec.replicas is not None else (dep.status.replicas or 0),
-            "ready": dep.status.ready_replicas or 0,
-            "cpu": parse_cpu(limits.get("cpu")) or app_config.CPU_DEFAULT,
-            "mem": parse_mem_mb(limits.get("memory")) or float(app_config.MEM_DEFAULT_MB),
-        }
+        state[svc] = _state_of(dep, svc)
     return state
 
 
@@ -139,13 +143,13 @@ def pod_ages(namespace: str = None) -> dict[str, float]:
 
 
 def get_all_state(namespace: str = None) -> dict[str, dict]:
-    """State of EVERY Deployment in the namespace, in one API call (same fields as get_state). Raises if listing is not
+    """State of EVERY Deployment in the namespace, from ONE list call (same fields as get_state). Raises if listing is not
     allowed - there is no per-service fallback when the names are not known."""
     namespace = namespace or app_config.NAMESPACE
     listed = _list_deployments(_load_client(), namespace)
     if listed is None:
         raise RuntimeError(f"cannot list deployments in {namespace}")
-    return get_state(list(listed), namespace)
+    return {name: _state_of(dep, name) for name, dep in listed.items()}
 
 
 def rollout_complete(services: list[str], namespace: str = None) -> bool:

@@ -49,3 +49,27 @@ def test_critical_set_beats_the_depth_first_chain_on_held_out_real_requests():
     assert cur["coverage"][0] > rnd["coverage"][0] + 0.2
     # changing only the WEIGHTS of the chain search does not help: the gain comes from the set / per-type representation
     assert abs(res["DFS weighted by critical share"]["coverage"][0] - cur["coverage"][0]) < 0.03
+
+
+def test_simulated_critical_profile_matches_the_definition_used_on_real_requests():
+    chains = [(["e", "a", "c"], 0.6), (["e", "b"], 0.4)]
+    prof = crisp.expected_critical_profile(chains, {"a": 30.0, "c": 10.0, "b": 100.0})
+    # 60 % of requests split 40 ms as a 75/25 and 40 % wait entirely on b
+    assert prof["shares"]["b"] == pytest.approx(0.4) and prof["shares"]["a"] == pytest.approx(0.6 * 0.75)
+    assert prof["shares"]["c"] == pytest.approx(0.6 * 0.25) and sum(prof["shares"].values()) == pytest.approx(1.0)
+    assert next(iter(prof["tail"])) == "b"                                     # the slow chain is the tail
+    assert prof["set"][0] == "a" or "b" in prof["set"]
+    assert crisp.expected_critical_profile([], {}) == {"set": [], "shares": {}, "tail": {}}
+
+
+def test_env_can_observe_the_critical_set_and_defaults_to_the_chain(monkeypatch):
+    from src import config
+    from src.rl_agent.env import AutoscalerEnv
+    from src.topologies import DEMO6
+    env = AutoscalerEnv(topology=DEMO6, seed=0)
+    base = env.reset("normal")
+    monkeypatch.setattr(config, "CRITICAL_PATH_SOURCE", "crisp")
+    env2 = AutoscalerEnv(topology=DEMO6, seed=0)
+    alt = env2.reset("normal")
+    assert base["X"].shape == alt["X"].shape
+    assert alt["X"][:, 15].max() <= 1.0 and alt["X"][:, 14].sum() >= 1.0       # on-path flags and shares from the measured set

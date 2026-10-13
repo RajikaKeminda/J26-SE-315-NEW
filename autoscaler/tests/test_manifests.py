@@ -63,8 +63,18 @@ def test_autoscaler_rbac_is_namespaced_and_least_privilege():
     rules = kinds["Role"]["rules"]
     allowed = {(r["resources"][0], tuple(sorted(r["verbs"]))) for r in rules}
     assert allowed == {("deployments", ("get", "list", "patch")),
-                       ("deployments/scale", ("get", "patch", "update"))}
-    assert all(r["apiGroups"] == ["apps"] for r in rules), "no pods, no secrets, nothing core"
+                       ("deployments/scale", ("get", "patch", "update")),
+                       ("pods", ("get", "list"))}                    # read-only: the guard reads the age of a service's newest pod
+    core = [r for r in rules if r["apiGroups"] == [""]]
+    assert [r["resources"] for r in core] == [["pods"]] and set(core[0]["verbs"]) <= {"get", "list"}, "nothing core except read-only pods"
+    assert all(r["apiGroups"] in (["apps"], [""]) for r in rules) and not any("secrets" in r["resources"] for r in rules)
+
+
+def test_profile_budget_scales_with_the_observed_services():
+    """The cost counts every service shown; a fixed cluster budget sized for the traced ones made every scale-up exceed it."""
+    prof = dict(l.split("#")[0].strip().split("=", 1) for l in open(os.path.join(os.path.dirname(K8S), "profiles", "trainticket.env"))
+                if "=" in l and not l.lstrip().startswith("#"))
+    assert prof.get("OBSERVE_UNTRACED") == "1" and "CLUSTER_BUDGET_CORES" not in prof and float(prof["BUDGET_PER_SERVICE"]) >= 1.0
 
 
 def test_autoscaler_deployment_is_a_single_replica_non_root_with_probes():

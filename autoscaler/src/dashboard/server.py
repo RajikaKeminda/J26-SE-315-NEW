@@ -283,6 +283,8 @@ def main():
     ap.add_argument("--scenario", choices=SCENARIOS, default="burst", help="demo traffic")
     ap.add_argument("--interval", type=float, default=None, help="seconds between ticks")
     args = ap.parse_args()
+    if args.mode == "replay" and not args.replay:
+        ap.error("--mode replay needs --replay FILE (record one with python -m src.dashboard.record)")
 
     configure(args.mode, args.shadow, args.arm, args.scenario, args.interval,
               controller=args.controller, preference=args.preference, replay=args.replay)

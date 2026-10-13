@@ -251,3 +251,28 @@ def test_opt_in_stabilisation_window_after_a_scale_up_and_while_the_newest_pod_i
 def test_stabilisation_window_is_off_by_default_so_shipped_results_stay_valid():
     from src import config
     assert config.SCALE_DOWN_AFTER_UP_STEPS == 0
+
+
+def test_revoke_restores_the_timestamps_the_last_filter_overwrote(monkeypatch):
+    from src import config
+    from src.safety.guards import SafetyGuard
+    monkeypatch.setattr(config, "SCALE_DOWN_AFTER_UP_STEPS", 5)
+    g = SafetyGuard(services=["a"], budget=100.0)
+    cur = {"a": {"replicas": 2, "cpu": 0.5, "mem": 256.0, "mem_utilization": 0.3}}
+    g.filter({"a": {"dr": 1, "cpu": 0.5, "mem": 256.0}}, cur, step=3)               # a real scale-up at step 3
+    g.filter({"a": {"dr": 1, "cpu": 1.0, "mem": 256.0}}, cur, step=9)               # approved at step 9 ...
+    g.revoke("a", scale=True, resize=True)                                          # ... but vetoed afterwards
+    assert g._last_scale_up_step["a"] == 3 and "a" not in g._last_resize_step      # back to what really happened
+    assert g.filter({"a": {"dr": -1, "cpu": 0.5, "mem": 256.0}}, cur, step=9)[0]["a"]["dr"] == -1   # 6 steps after the real scale-up: allowed
+    g.revoke("unknown")                                                              # harmless
+
+
+def test_scale_down_feature_covers_the_longest_blocking_rule(monkeypatch):
+    from src import config
+    from src.safety.guards import SafetyGuard
+    monkeypatch.setattr(config, "SCALE_DOWN_COOLDOWN_STEPS", 3)
+    monkeypatch.setattr(config, "SCALE_DOWN_AFTER_UP_STEPS", 10)
+    g = SafetyGuard(services=["a"], budget=100.0)
+    cur = {"a": {"replicas": 2, "cpu": 0.5, "mem": 256.0, "mem_utilization": 0.3}}
+    g.filter({"a": {"dr": 1, "cpu": 0.5, "mem": 256.0}}, cur, step=0)
+    assert g.readiness(5)["a"][1] == pytest.approx(0.5)          # still blocked for 5 more steps of the 10, not "ready" after 3

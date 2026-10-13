@@ -9,7 +9,6 @@ replayed later with `python -m src.dashboard.server --mode replay --replay FILE`
 
 import argparse
 import asyncio
-import json
 import os
 import time
 
