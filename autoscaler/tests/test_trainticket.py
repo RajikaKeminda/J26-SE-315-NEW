@@ -105,14 +105,17 @@ def test_live_topology_is_learned_from_traces_only():
     assert lt.update([booking()] * 3, now=1010.0) is False           # same structure
 
 
-def test_live_topology_drops_edges_not_seen_for_ttl_but_freezes_when_idle():
+def test_live_topology_is_frozen_while_idle_and_drops_edges_not_seen_for_ttl_of_traffic():
     lt = LiveTopology("gw", half_life_s=60, ttl_s=120, min_calls=1)
     lt.update([booking()] * 3, now=1000.0)
     other = _trace([_span("g", "gw", "server", 0, 50), _span("c", "gw", "client", 1, 40, parent="g"),
                     _span("x", "extra", "server", 2, 38, parent="c")])
-    lt.update([], now=5000.0)                                        # idle for a long time: graph kept
+    lt.update([], now=5000.0)                                        # a long idle gap: the graph is kept ...
     assert "pre" in lt.services()
-    assert lt.update([other] * 3, now=5001.0) is True                # busy again: old edges are past the TTL
+    lt.update([other] * 3, now=5001.0)                               # ... and traffic resuming does not erase what it has not exercised yet
+    assert "pre" in lt.services() and "extra" in lt.services()
+    for i in range(1, 6):                                            # but 150 s of TRAFFIC without the booking edges drops them
+        lt.update([other] * 3, now=5001.0 + 30.0 * i)
     assert lt.services() == ["gw", "extra"]
 
 

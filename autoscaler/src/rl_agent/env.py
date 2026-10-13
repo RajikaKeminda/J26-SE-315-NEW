@@ -30,6 +30,7 @@ from src.simulation import service_model as sm
 from src.simulation.simulator import (
     Simulator, budget_for, generate_traffic, random_topology)
 from src.topologies import DEMO6, Topology
+from src.topology_intel.critical_path import path_distribution
 from src.topology_intel.graph_builder import build_observation
 
 
@@ -148,8 +149,15 @@ class AutoscalerEnv:
         metrics = {s: dict(self._metrics[s], resize_cooldown=ready[s][0], scaledown_cooldown=ready[s][1])
                    for s in self.services}
         cost = self.sim.cost()
+        override = None
+        if config.CRITICAL_PATH_SOURCE == "crisp":        # opt-in: the measured-critical-share inputs (see topology_intel/crisp.py)
+            from src.topology_intel import crisp
+            if getattr(self, "_chains_for", None) is not self.topology:
+                self._chains, self._chains_for = path_distribution(self.call_graph, self.entry, max_paths=256), self.topology
+            prof = crisp.expected_critical_profile(self._chains, {s: metrics[s]["latency_ms"] for s in self.services})
+            override = {"set": prof["set"], "shares": prof["shares"]}
         obs = build_observation(self.services, self.call_graph, self.entry, metrics, e2e,
-                                cost, self.budget, self.slo_ms)
+                                cost, self.budget, self.slo_ms, critical_override=override)
         obs.update(metrics=metrics, e2e=e2e, cost=cost, external_rps=float(self.traffic[min(self.t, len(self.traffic) - 1)]))
         self._observe_cached = obs
         return obs

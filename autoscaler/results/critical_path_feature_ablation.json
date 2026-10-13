@@ -1,0 +1,108 @@
+{
+ "design": "original = models/mo_td3_full.pt; control and crisp were fine-tuned from it with the SAME budget (500 episodes), seed (21), hyper-parameters and topologies (4-20 services, randomised initial CPU limits); the only difference is the two path inputs of each node (depth-first chain vs. the measured critical set, topology_intel/crisp.py). Each agent is scored under the feature source it was trained with.",
+ "episodes_per_topology": 8,
+ "seeds": "one training seed (21): differences below ~0.026 are inside the seed-to-seed noise of the main study",
+ "agents": {
+  "base": {
+   "demo6": {
+    "slo_violation_rate": 0.018750000000000003,
+    "p95_latency": 196.24486943467795,
+    "mean_cost": 3.2230751953125,
+    "scalarized": 0.19731627508299424
+   },
+   "trainticket14": {
+    "slo_violation_rate": 0.065625,
+    "p95_latency": 324.7773360459249,
+    "mean_cost": 7.6721904296875,
+    "scalarized": 0.217387055081781
+   },
+   "heldout_4_12": {
+    "slo_violation_rate": 0.07675781250000001,
+    "p95_latency": 216.57093162183236,
+    "mean_cost": 4.9692426147460935,
+    "scalarized": 0.22989992260991127
+   },
+   "random_25": {
+    "slo_violation_rate": 0.09687499999999999,
+    "p95_latency": 322.61885577128925,
+    "mean_cost": 15.118982421874998,
+    "scalarized": 0.24264916444080878
+   },
+   "random_50": {
+    "slo_violation_rate": 0.23541666666666664,
+    "p95_latency": 746.2665034591229,
+    "mean_cost": 29.19271061197917,
+    "scalarized": 0.2835941342966786
+   }
+  },
+  "control": {
+   "demo6": {
+    "slo_violation_rate": 0.053125,
+    "p95_latency": 174.30721759680614,
+    "mean_cost": 3.6439355468750003,
+    "scalarized": 0.22547036257456055
+   },
+   "trainticket14": {
+    "slo_violation_rate": 0.040625,
+    "p95_latency": 219.50694575707476,
+    "mean_cost": 9.243500976562501,
+    "scalarized": 0.24473824985325335
+   },
+   "heldout_4_12": {
+    "slo_violation_rate": 0.07519531250000001,
+    "p95_latency": 180.3011235705082,
+    "mean_cost": 5.787815124511718,
+    "scalarized": 0.2619424059250377
+   },
+   "random_25": {
+    "slo_violation_rate": 0.07291666666666667,
+    "p95_latency": 343.079300930669,
+    "mean_cost": 18.362767578125002,
+    "scalarized": 0.2896752068675899
+   },
+   "random_50": {
+    "slo_violation_rate": 0.18958333333333333,
+    "p95_latency": 909.9051487188854,
+    "mean_cost": 35.88363053385417,
+    "scalarized": 0.3255875162353429
+   }
+  },
+  "crisp": {
+   "demo6": {
+    "slo_violation_rate": 0.04375,
+    "p95_latency": 193.58117068924966,
+    "mean_cost": 3.7666103515625,
+    "scalarized": 0.2349022629437968
+   },
+   "trainticket14": {
+    "slo_violation_rate": 0.03125,
+    "p95_latency": 286.9301633288519,
+    "mean_cost": 8.7654853515625,
+    "scalarized": 0.23568918224191293
+   },
+   "heldout_4_12": {
+    "slo_violation_rate": 0.1201171875,
+    "p95_latency": 309.54523951142625,
+    "mean_cost": 5.585569091796875,
+    "scalarized": 0.2688720935489982
+   },
+   "random_25": {
+    "slo_violation_rate": 0.06770833333333333,
+    "p95_latency": 343.07819495982693,
+    "mean_cost": 17.93195442708333,
+    "scalarized": 0.28134178370819424
+   },
+   "random_50": {
+    "slo_violation_rate": 0.16770833333333332,
+    "p95_latency": 731.9575078660358,
+    "mean_cost": 35.21468489583334,
+    "scalarized": 0.31072646772760587
+   }
+  }
+ },
+ "feature_source": {
+  "base": "dfs",
+  "control": "dfs",
+  "crisp": "crisp"
+ }
+}

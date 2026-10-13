@@ -6,9 +6,9 @@ It is what Jaeger's "System Architecture" view does, plus the properties a contr
 
   * edges are accumulated from every trace window (caller -> callee = a server span whose nearest
     ancestor in another service is the caller; see otel_traces.analyse_trace)
-  * observed call counts DECAY (half-life) and an edge that has not been seen for `ttl_s` is dropped,
+  * observed call counts DECAY (half-life) and an edge that has not been seen for `ttl_s` of TRAFFIC time is dropped,
     so the graph shrinks when a dependency disappears as well as growing when one appears
-  * a window with NO traces at all (idle system) freezes the graph instead of erasing it
+  * a window with NO traces at all (idle system) freezes the graph, and so does the idle stretch before traffic resumes
   * traffic share of an edge = its decayed count / the caller's total decayed outgoing count
   * the result is always a DAG rooted at the entry service (the critical-path DP needs one): if observed
     calls form a cycle the weakest edge of the cycle is ignored
@@ -30,19 +30,29 @@ class LiveTopology:
         self.last_seen: dict[tuple[str, str], float] = {}
         self.updated_at: float | None = None
         self.last_window_traces = 0
-        self._t = None
+        self._last_call = None
+        self._idle = False
+        self._vt = 0.0                                  # virtual clock: seconds of traffic seen
 
     def update(self, traces, now=None):
-        """Fold one window of Jaeger traces into the graph. Returns True if the graph's structure changed."""
+        """Fold one window of Jaeger traces into the graph. Returns True if the graph's structure changed.
+
+        Decay and the TTL run on a VIRTUAL clock that advances only across windows that carried traffic: time with no traces at all
+        (nothing running, a paused demo, an unreachable Jaeger returning nothing) does not age the graph, so an idle graph is
+        kept as it was and traffic resuming after a long pause does not erase the edges it simply has not exercised yet."""
         now = time.time() if now is None else now
         before = self.edges_set()
         self.last_window_traces = len(traces)
-        if traces:                                              # idle window: keep what we know
-            if self._t is not None:
-                decay = 0.5 ** (max(0.0, now - self._t) / self.half_life_s)
+        gap = 0.0 if self._last_call is None else max(0.0, now - self._last_call)
+        after_idle = self._idle
+        self._last_call, self._idle = now, not traces
+        if traces:
+            dt = 0.0 if after_idle else gap               # the gap that ends an idle stretch is idle time, not traffic time
+            self._vt += dt
+            if dt:
+                decay = 0.5 ** (dt / self.half_life_s)
                 for e in self.counts:
                     self.counts[e] *= decay
-            self._t = now
             new = defaultdict(int)
             for t in traces:
                 for r in otel_traces.analyse_trace(t):
@@ -50,8 +60,8 @@ class LiveTopology:
                         new[(r["parent_service"], r["service"])] += 1
             for e, c in new.items():
                 self.counts[e] = self.counts.get(e, 0.0) + c
-                self.last_seen[e] = now
-            for e in [e for e, ts in self.last_seen.items() if now - ts > self.ttl_s]:
+                self.last_seen[e] = self._vt
+            for e in [e for e, ts in self.last_seen.items() if self._vt - ts > self.ttl_s]:
                 self.counts.pop(e, None)
                 self.last_seen.pop(e, None)
             self.updated_at = now

@@ -21,6 +21,9 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
     verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]                     # read-only: the guard reads the age of a service's newest pod
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

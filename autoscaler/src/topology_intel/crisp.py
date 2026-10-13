@@ -114,3 +114,50 @@ def top1(requests, services):
     """Fraction of requests whose single most-blamed service is in `services`."""
     on = set(services)
     return sum(1 for r in requests if r.blame and max(r.blame, key=r.blame.get) in on) / max(len(requests), 1)
+
+
+# ---------------------------------------------------------------------------------------------------
+# The same quantity inside the SIMULATOR, so an agent can be trained with it
+# ---------------------------------------------------------------------------------------------------
+def expected_critical_profile(chains, latency, coverage=0.9, tail_quantile=0.8):
+    """Critical shares of a simulated cluster. The simulator sends each request down ONE chain chosen by the traffic shares
+    (topology_intel.critical_path.path_distribution gives [(chain, probability)]), so a request's downstream time is split among the services of its
+    chain in proportion to their latencies, and a service's share is the probability-weighted mean of that split - exactly the quantity
+    `shares()` measures on real requests. The tail view keeps the slowest chains up to the slowest (1 - tail_quantile) of the traffic.
+
+    Returns {"set": [...], "shares": {service: overall share}, "tail": {...}}; the entry service (first element of every chain) is excluded."""
+    rows = []
+    for chain, prob in chains:
+        down = chain[1:]
+        total = sum(float(latency.get(x, 0.0)) for x in down)
+        if down and total > 1e-9:
+            rows.append((total, prob, down))
+    if not rows:
+        return {"set": [], "shares": {}, "tail": {}}
+
+    def blend(sel):
+        mass = sum(p for _, p, _ in sel) or 1.0
+        acc = defaultdict(float)
+        for total, p, down in sel:
+            for x in down:
+                acc[x] += p * float(latency.get(x, 0.0)) / total
+        return {x: v / mass for x, v in sorted(acc.items(), key=lambda kv: -kv[1])}
+
+    overall = blend(rows)
+    slowest, cum, mass = [], 0.0, sum(p for _, p, _ in rows)
+    for r in sorted(rows, key=lambda r: -r[0]):
+        slowest.append(r)
+        cum += r[1]
+        if cum >= (1.0 - tail_quantile) * mass:
+            break
+    tail_shares = blend(slowest)
+
+    def cover(table):
+        out, acc = [], 0.0
+        for x, v in table.items():
+            out.append(x)
+            acc += v
+            if acc >= coverage:
+                break
+        return out
+    return {"set": list(dict.fromkeys(cover(overall) + cover(tail_shares))), "shares": overall, "tail": tail_shares}

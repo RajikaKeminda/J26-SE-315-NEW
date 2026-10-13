@@ -103,9 +103,7 @@ def test_payload_carries_the_critical_profile_and_defaults_to_the_dfs_features(e
 
 
 def test_crisp_features_have_the_same_shape_but_describe_the_measured_critical_set(engine, monkeypatch):
-    import numpy as np
-    base = engine.tick()
-    obs_dfs = engine._last_obs if hasattr(engine, "_last_obs") else None
+    engine.tick()
     from src.topology_intel.graph_builder import build_observation
     metrics = {s: {"requests": 1.0, "latency_ms": 10.0 + i, "latency_p95_ms": 20.0, "utilization": 0.3, "replicas": 1, "cpu": 1.0,
                    "mem": 800.0, "edge_p95": {}} for i, s in enumerate(engine.services)}
@@ -115,6 +113,24 @@ def test_crisp_features_have_the_same_shape_but_describe_the_measured_critical_s
     b = build_observation(*args, critical_override={"set": ["ts-order-service"], "shares": {"ts-order-service": 0.74}})
     assert a["X"].shape == b["X"].shape                                       # no retraining of the architecture needed
     i = engine.services.index("ts-order-service")
-    assert b["X"][i, 15] == pytest.approx(0.74) and b["critical_path"] == [engine.entry, "ts-order-service"]
+    assert b["X"][i, 15] == pytest.approx(0.74) and b["critical_set"] == ["ts-order-service"]
+    assert b["critical_path"] == a["critical_path"]                           # the chain used for display is unchanged
     others = [j for j in range(len(engine.services)) if j != i and engine.services[j] != engine.entry]
     assert all(b["X"][j, 14] == 0.0 for j in others)                          # off the critical set
+
+
+def test_services_discovered_later_get_the_measured_cpu_priors(engine):
+    engine.tick()
+    assert engine.builder.priors["ts-order-service"] == pytest.approx(81.6)       # discovered after start-up, still has its measured prior
+    assert engine.builder.priors["ts-station-service"] == pytest.approx(6.6)
+
+
+def test_vetoed_scale_up_does_not_start_a_cooldown(engine, monkeypatch):
+    """The guard approves, the node-memory check vetoes: no pod was added, so no stabilisation window may start."""
+    monkeypatch.setattr(config, "SCALE_DOWN_AFTER_UP_STEPS", 10)
+    monkeypatch.setattr(config, "NODE_MEMORY_RESERVE_MB", 10**9)                 # nothing fits: every scale-up is vetoed
+    engine.controller = type("C", (), {"name": "x", "decide": lambda self, obs, breaker_open=False: {
+        s: {"dr": 1, "cpu": 1.0, "mem": 800.0} for s in engine.services}, "reset": lambda self: None})()
+    for _ in range(2):
+        engine.tick()
+    assert not engine.guard._last_scale_up_step, "a vetoed scale-up must leave no trace in the guard"

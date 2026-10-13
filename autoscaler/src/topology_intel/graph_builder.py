@@ -150,12 +150,13 @@ def build_observation(services, call_graph, entry, metrics, e2e, cost, budget, s
     controller reads one observation object."""
     crit_total, crit_path = critical_path_dfs(
         call_graph, entry, {s: metrics[s]["latency_ms"] for s in services})
-    crit_shares = None
-    if critical_override:                      # opt-in: the critical SET measured on real requests (CRISP-style) instead of the DFS chain
+    crit_shares, feature_path = None, crit_path
+    if critical_override:                      # opt-in: the critical SET measured on real requests (CRISP-style) feeds the two path features
         crit_shares = critical_override["shares"]
-        crit_path = [entry] + [s for s in critical_override["set"] if s != entry and s in services]
+        feature_path = [entry] + [s for s in critical_override["set"] if s != entry and s in services]
     return {
-        "X": node_features(services, metrics, entry, crit_path, crit_total, crit_shares),
+        "X": node_features(services, metrics, entry, feature_path, crit_total, crit_shares),
+        "critical_set": feature_path[1:] if critical_override else None,       # a set, not a chain: "critical_path" stays the DFS chain
         "A_sdg": build_sdg(services, call_graph),
         "A_ehg": build_ehg(services, call_graph, metrics, slo_ms),
         "g": global_features(metrics, services, e2e, cost, budget, slo_ms, crit_total, entry),
