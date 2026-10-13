@@ -57,13 +57,19 @@ Open the control room next to Jaeger (http://localhost:16686).
    time is attributed to services by walking its trace backwards from the end. The panel shows how much of the downstream
    time the agent's path explains, against a random chain through the same graph, and links to the slowest request in Jaeger.
    Open that trace and show that the services on the waterfall are the ones on the red chain.
-5. Offline, on 253 real recorded requests: `cd autoscaler && python -m src.evaluation.critical_path_eval`
+5. **Critical shares (CRISP-style, below the proof panel):** per service, the share of the downstream time it is the critical path for, over all requests and over
+   the slowest 20 %, and the services that carry each request type. Say where it comes from: Uber's CRISP (per-request critical path, replayed backwards,
+   aggregated per service). It shows what a single chain cannot: `contacts` requests wait on `contacts`, which no chain through `order` contains.
+6. Offline, on 253 real recorded requests: `cd autoscaler && python -m src.evaluation.critical_path_eval` (prints the table below and a held-out comparison)
 
 | Path | Share of a request's downstream time explained | Slowest service of the request is on the path |
 |---|---|---|
 | **Agent (DFS on measured latency)** | **80 %** | **90 %** |
 | Random chain (expected) | 48 % | 54 % |
 | Deepest chain | 4 % | 0 % |
+
+Held-out (learned on training requests, scored on others): the chain explains 80 % of the downstream time, the top services per request type 96 %; weighting the chain
+differently changes nothing - the gain is from using a set per request type instead of one chain.
 
 Be ready for: "downstream time only" (the gateway is on every path and waits on 35 services that emit no traces, which
 would inflate any number); 91 of 253 requests left the gateway through traced services; `ts-order-service` carries about
@@ -130,6 +136,7 @@ series are missing), a node-memory check before any scale-up, and a whitelist of
 
 | Question | Answer |
 |---|---|
+| Is a single critical path enough? | It is what the proposal specifies and it explains 80 % of the downstream time here, but a single chain misses request types with their own bottleneck (`contacts`: 0 %). The CRISP-style critical shares (per service, tail, per request type) explain 96 % held out and are shown live. Whether they improve the scaling decisions is not measured yet. |
 | Does it work with any cluster? | It needs Kubernetes access, Prometheus with cAdvisor + kube-state-metrics, and OpenTelemetry traces in Jaeger for the call graph. Verified on two applications (the demo app and Train-Ticket). Istio/Linkerd metrics, Zipkin and Tempo are not implemented. Without traces it can observe but has no call graph. |
 | Why only 11 services controlled? | Only those emit traces. The others are observed (CPU, memory) but have no call edges. |
 | Did it scale Train-Ticket under load? | Yes, in two live runs it scaled the staged bottleneck `ts-order-service` 1 -> 2 and back, and the second pod cut its own p95 by about 30-50 %. The bottleneck was staged (CPU limit lowered), the node allows one extra pod, and run 1 lacked the booking requests (a load-script date bug, documented). |

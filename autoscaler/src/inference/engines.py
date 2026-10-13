@@ -388,6 +388,27 @@ class LiveEngine(BaseEngine):
                 approved[s]["dr"] = 0
                 reasons[s] = why or f"scale-up blocked: node memory headroom ({max(room, 0):.0f} MiB left, need {need:.0f})"
 
+    def _critical_profile(self):
+        """CRISP-style critical shares of this window's real requests (overall, slow tail, per request type) - or None."""
+        traces = getattr(self._prom, "last_traces", None)
+        if not traces:
+            return None
+        try:
+            from src.topology_intel import crisp
+            reqs = crisp.requests_from_traces(traces, self.entry)
+            if not reqs:
+                return None
+            prof = crisp.CriticalProfile(reqs)
+            crit = list(dict.fromkeys(prof.critical_set(0.9) + prof.critical_set(0.9, "tail")))      # explains 90 % overall AND in the tail
+            self._last_critical = {"set": crit, "shares": prof.overall}
+            top = lambda t, n=8: {s: round(v, 3) for s, v in list(t.items())[:n]}
+            return {"requests": prof.n, "overall": top(prof.overall), "tail": top(prof.tail), "set": crit,
+                    "coverage": round(crisp.coverage(reqs, crit), 3),
+                    "types": [{"op": op, "n": prof.type_counts[op], "top": top(sh, 3)}
+                              for op, sh in sorted(prof.by_type.items(), key=lambda x: -prof.type_counts[x[0]])[:6]]}
+        except Exception:                        # an explanation must never break the control loop
+            return None
+
     def _critical_path_evidence(self, obs):
         """Checks the current critical path against the real requests of this window (needs OpenTelemetry traces)."""
         traces = getattr(self._prom, "last_traces", None)
@@ -477,8 +498,10 @@ class LiveEngine(BaseEngine):
             if svc in metrics:
                 metrics[svc]["resize_cooldown"], metrics[svc]["scaledown_cooldown"] = rz, sd
         slo_ms = slo_for_live(self.call_graph, self.entry)
+        profile = self._critical_profile()
+        override = getattr(self, "_last_critical", None) if (config.CRITICAL_PATH_SOURCE == "crisp" and profile) else None
         obs = build_observation(self.services, self.call_graph, self.entry, metrics, e2e, cost,
-                                self.guard.budget, slo_ms)
+                                self.guard.budget, slo_ms, critical_override=override)
 
         self.guard.observe_slo(e2e["p95_ms"], slo_ms, self.step_i)
         proposals = self.controller.decide(obs, breaker_open=self.guard.breaker_open)
@@ -508,6 +531,7 @@ class LiveEngine(BaseEngine):
                                 self.services, self.guard.breaker_open,
                                 topology_source=self.topology_source, topology=self._topology_info(),
                                 critical_path_evidence=self._critical_path_evidence(obs),
+                                critical_profile=profile,
                                 jaeger_url=config.JAEGER_PUBLIC_URL)
         self.step_i += 1
         self._last_payload = payload

@@ -227,6 +227,10 @@ AUTODISCOVER_TOPOLOGY = os.environ.get("AUTODISCOVER_TOPOLOGY", "0") == "1"
 # (decayed) times are ignored as noise.
 # Also show the running Deployments that emit no traces, as isolated nodes (CPU and memory only, no call edges). They
 # are observed, never controlled unless listed in CONTROLLED_SERVICES.
+# What the agent's two path features describe: "dfs" = the chain found by the depth-first search of the proposal (what the shipped
+# models were trained with); "crisp" = the critical SET measured on real requests (topology_intel/crisp.py). "crisp" changes the meaning
+# of the inputs, so it is OFF by default: switch it on only for an agent trained or evaluated with it.
+CRITICAL_PATH_SOURCE = os.environ.get("CRITICAL_PATH_SOURCE", "dfs")
 OBSERVE_UNTRACED = os.environ.get("OBSERVE_UNTRACED", "0") == "1"
 TOPOLOGY_HALF_LIFE_S = _env_float("TOPOLOGY_HALF_LIFE_S", 120.0)
 TOPOLOGY_TTL_S = _env_float("TOPOLOGY_TTL_S", 300.0)

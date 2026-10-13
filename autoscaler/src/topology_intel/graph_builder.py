@@ -54,14 +54,18 @@ def offered_load(m: dict) -> float:
     return m["requests"] / max(cap, 1e-6)
 
 
-def node_features(services, metrics, entry, crit_path, crit_total) -> np.ndarray:
+def node_features(services, metrics, entry, crit_path, crit_total, crit_shares=None) -> np.ndarray:
+    """`crit_shares` ({service: critical-path share}) replaces the path-latency share feature when given (see topology_intel/crisp.py)."""
     on_path = set(crit_path)
     rows = []
     for s in services:
         m = metrics[s]
         rps_prev = m.get("rps_prev", m["requests"])
         trend = (m["requests"] - rps_prev) / max(rps_prev, 1.0)
-        share = (m["latency_ms"] / crit_total) if (s in on_path and crit_total > 1e-9) else 0.0
+        if crit_shares is not None:
+            share = float(crit_shares.get(s, 0.0)) if s in on_path else 0.0
+        else:
+            share = (m["latency_ms"] / crit_total) if (s in on_path and crit_total > 1e-9) else 0.0
         rows.append([
             min(m["latency_ms"] / LAT_NORM_MS, 5.0),
             min(m.get("latency_p95_ms", m["latency_ms"]) / LAT_NORM_MS, 5.0),
@@ -140,14 +144,18 @@ def global_features(metrics, services, e2e, cost, budget, slo_ms, crit_total, en
     ], dtype=np.float32)
 
 
-def build_observation(services, call_graph, entry, metrics, e2e, cost, budget, slo_ms):
+def build_observation(services, call_graph, entry, metrics, e2e, cost, budget, slo_ms, critical_override=None):
     """-> dict(X, A_sdg, A_ehg, g, critical_path, critical_total, metrics, e2e, cost).
     The graph tensors feed the agent; `metrics`/`e2e` feed the rule-based baselines, so every
     controller reads one observation object."""
     crit_total, crit_path = critical_path_dfs(
         call_graph, entry, {s: metrics[s]["latency_ms"] for s in services})
+    crit_shares = None
+    if critical_override:                      # opt-in: the critical SET measured on real requests (CRISP-style) instead of the DFS chain
+        crit_shares = critical_override["shares"]
+        crit_path = [entry] + [s for s in critical_override["set"] if s != entry and s in services]
     return {
-        "X": node_features(services, metrics, entry, crit_path, crit_total),
+        "X": node_features(services, metrics, entry, crit_path, crit_total, crit_shares),
         "A_sdg": build_sdg(services, call_graph),
         "A_ehg": build_ehg(services, call_graph, metrics, slo_ms),
         "g": global_features(metrics, services, e2e, cost, budget, slo_ms, crit_total, entry),

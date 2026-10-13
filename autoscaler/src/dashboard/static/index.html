@@ -221,6 +221,7 @@ tr:last-child td{border-bottom:none}
     </div>
     <div id="evBars"></div>
   </div>
+  <div id="evProfile" style="margin-top:16px"></div>
 </div>
 
 <div class="grid" style="grid-template-columns:1.55fr 1fr">
@@ -407,6 +408,18 @@ function drawEvidence(d){
   $('evBars').innerHTML=Object.entries(ev.share).slice(0,8).map(([sv,v])=>
     `<div class="obj" style="grid-template-columns:96px 1fr 40px"><span class="k" style="text-transform:none;color:${onp.has(sv)?'var(--crit)':'var(--dim)'}">${nm(sv)}${onp.has(sv)?' ●':''}</span>`+
     `<div class="bar"><i style="width:${Math.round(v*100)}%;background:${onp.has(sv)?'var(--crit)':'var(--line)'}"></i></div><span>${pct(v)}</span></div>`).join('');
+  const cp=d.critical_profile, box=$('evProfile');
+  if(!cp){box.innerHTML='';return;}
+  const inSet=new Set(cp.set), names=[...new Set([...Object.keys(cp.overall),...Object.keys(cp.tail)])].slice(0,7);
+  const bar=(v,c)=>`<div class="bar" style="height:7px"><i style="width:${Math.round((v||0)*100)}%;background:${c}"></i></div>`;
+  const rows=names.map(sv=>`<div class="obj" style="grid-template-columns:96px 1fr 1fr 84px;margin-top:6px">`+
+    `<span class="k" style="text-transform:none;color:${inSet.has(sv)?'var(--crit)':'var(--dim)'}">${nm(sv)}${inSet.has(sv)?' ●':''}</span>`+
+    `${bar(cp.overall[sv],'var(--agent)')}${bar(cp.tail[sv],'var(--crit)')}`+
+    `<span>${pct(cp.overall[sv]||0)} / ${pct(cp.tail[sv]||0)}</span></div>`).join('');
+  const types=cp.types.map(t=>`<tr><td>${t.op}</td><td>${t.n}</td><td>${Object.entries(t.top).map(([sv,v])=>nm(sv)+' '+pct(v)).join(', ')}</td></tr>`).join('');
+  box.innerHTML=`<div class="sub" style="margin:0 0 6px">Critical-path <b>share</b> per service, measured on the ${cp.requests} real requests of this window (CRISP-style: each request is replayed backwards from its end; `+
+    `parallel calls that finish earlier are not blamed). Blue = all requests, red = the slowest 20 % · ● = the smallest set that explains ${pct(cp.coverage)} of the time.</div>${rows}`+
+    (types?`<table class="tbl" style="margin-top:10px;width:100%"><thead><tr><th>request type</th><th>n</th><th>carries the downstream time</th></tr></thead><tbody>${types}</tbody></table>`:'');
 }
 
 /* ---------- decision feed ---------- */
