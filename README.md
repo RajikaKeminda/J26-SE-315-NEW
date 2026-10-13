@@ -27,6 +27,28 @@ requirement of the form to code, tests and status.
 
 ---
 
+## Running it on a real application and on any cluster
+
+Beyond the 6-service demo app, the agent has been run against the real **Train-Ticket** benchmark (46 Java/Spring Deployments, 33 running, on a
+separate machine; the controller on a laptop reaches it over SSH tunnels). **Start with [`docs/INTERVIEW_DEMO.md`](docs/INTERVIEW_DEMO.md)** (the demo script) and
+[`docs/TRAINTICKET.md`](docs/TRAINTICKET.md) (setup, measurements, results, limits).
+
+* **Point it at any cluster:** `bash scripts/20_autoscale_any_cluster.sh --namespace <ns> --prometheus <url> --jaeger <url>`. It inspects the cluster and derives the entry service
+  (the root of most traces), the controlled services, the action bounds (current limits and measured memory), the replica cap (node headroom), the pod start-up time (measured from
+  real pods) and the metric window (4x the scrape interval), and starts in shadow mode. Needs Prometheus with cAdvisor + kube-state-metrics and OpenTelemetry traces in Jaeger.
+* **The dependency graph is learned live** from traces (`topology_intel/live_topology.py`): nothing is declared except the entry service; edges decay and expire.
+* **The critical path is checked against real requests:** each request's end-to-end time is attributed to services by replaying its trace backwards (as in Uber's CRISP);
+  on 253 real requests the agent's path explains 80 % of the downstream time (a random chain 48 %), and a CRISP-style set per request type 96 % held out
+  (`python -m src.evaluation.critical_path_eval`). The dashboard shows the proof and the per-service critical shares live.
+* **Real actions, with extra safety:** a whitelist of controllable services, replica-only mode, a node-memory check before every scale-up, a stabilisation window after a
+  scale-up. Verified live: the agent scaled a staged CPU bottleneck (`ts-order-service`) 1 -> 2 -> 1 in two runs and the cluster was restored to its saved baseline.
+* **Many services (simulation):** a decision takes 0.4-0.9 ms from 8 to 100 services; one API call reads every Deployment per step.
+* **Honest result:** on Train-Ticket the agent is on par with a tuned HPA (with room to scale: fewer SLO violations, 14 % higher cost; with the node's 2-replica cap every controller is
+  capacity-limited). The value is the critical-path analysis, the multi-objective control and the safety layer, not a clear win over HPA.
+* **If the network fails:** `python -m src.dashboard.server --mode replay --replay autoscaler/results/replays/trainticket_run.jsonl` plays back a recorded live run, labelled as a replay.
+
+---
+
 ## Results
 
 Everything in this section is **generated from the committed result files** by
@@ -267,13 +289,15 @@ What was actually executed (macOS arm64, 8 GB RAM, kind v0.27 / Kubernetes 1.32 
 
 | | status |
 |---|---|
-| 219 tests (`make test`): components, clients, engines, dashboard API, agent, training, evaluation, manifests, README sync | **passing**, lint clean |
+| 268 tests (`make test`): components, clients, engines, dashboard API, agent, training, evaluation, manifests, README sync, live-topology / critical-path / auto-discovery on recorded real traces | **passing**, pyflakes clean |
 | `docker build` of both images, `docker compose config` | **run** (images built and loaded into kind) |
 | kind deployment, in-cluster autoscaler with RBAC, `scripts/14_e2e_smoke.sh` (open-loop traffic from inside the cluster → Prometheus real CPU/RSS/own-latency series + Jaeger traces → in-cluster **MO-TD3** acting) | **passed** |
 | Calibration load tests on the real cluster (36 measurements, 4 CPU limits) | **run**, committed in `calibration/` |
 | Closed-loop comparison on the real cluster (static, tuned HPA, MO-TD3, real Kubernetes HPA × burst, diurnal; 1 seed) | **run** - see the gap discussed above |
 | Dashboard in a real browser: graph, feed, preference sliders → API, controller switch | **run**, no JS errors |
-| Windows scripts, minikube path, `docker compose up`, GitHub Actions workflow | **not run** (the workflow is new; its e2e job uses a 1-replica-per-service variant for a ~4-vCPU runner) |
+| Real Train-Ticket on another machine (minikube, 46 Deployments): calibration at 1/2/3 users, two live act-mode runs (a staged bottleneck scaled 1 -> 2 -> 1), shadow runs | **run**, `docs/TRAINTICKET.md`, `autoscaler/results/trainticket_*` |
+| Critical path vs. 253 real requests; one-command auto-discovery on the real cluster; scale benchmark 8-100 services (simulation) | **run**, `docs/TRAINTICKET.md` |
+| Windows scripts, `docker compose up`, GitHub Actions workflow | **not run** (the workflow is new; its e2e job uses a 1-replica-per-service variant for a ~4-vCPU runner) |
 
 ---
 
@@ -428,10 +452,9 @@ specifies; the per-request latency a client sees is a probability mixture over c
 
 ## Deviations from the proposal
 
-* **Benchmark.** Train-Ticket's real ~40 Java/Spring services + MongoDB/MySQL need far more RAM than a laptop-class cluster. The repo
-  runs a 6-service application on the cluster and uses a **14-service application with Train-Ticket's call structure** (`trainticket14`,
-  generated by `scripts/gen_manifests.py --topology trainticket14`) as the *unseen-topology* generalisation test in the simulator.
-  It has **not** been run on the cluster, and no result here is a claim about the real Train-Ticket.
+* **Benchmark.** The real Train-Ticket (Java/Spring, 46 Deployments) was run on a separate machine with 11.7 GiB: only 11 services emit traces, the node has about 1 GiB of
+  headroom (so at most one extra pod of the heaviest service), and the controller was on a different machine. The simulator is only partly re-calibrated for it (memory, idle CPU, CPU per
+  request, the call graph; the queueing terms are the demo service's). The 14-service `trainticket14` topology is kept as the simulator's unseen-topology test.
 * **Libraries.** Gymnasium / Stable-Baselines3 / MORL-Baselines assume fixed-size flat observation and action vectors - the exact
   limitation the topology-agnostic shared policy removes. The agent is plain PyTorch.
 * **VPA baseline** is a faithful re-implementation of the recommender/updater logic (p90 usage + margin, restart on > 10 % change),
@@ -444,14 +467,17 @@ specifies; the per-request latency a client sees is a probability mixture over c
 
 ## Known gaps
 
-* One application topology has been run on a real cluster, on one machine; absolute numbers are properties of that machine and of Python
-  behind the GIL. `scripts/13_calibrate.sh` re-fits everything to yours.
+* Two applications have been run on real clusters (the demo app and Train-Ticket), on one machine each; absolute numbers are properties of those machines (and, for the demo app, of Python
+  behind the GIL). `scripts/13_calibrate.sh` re-fits the demo app to yours.
+* On Train-Ticket the agent is on par with a tuned HPA, not better, and the only live scaling shown is a **staged** bottleneck. The node's memory (not CPU) is the binding resource.
+* Only 11 of 47 services emit traces; the rest are observed (CPU, memory) but have no call edges. One-minute node stalls about 7-10 minutes into 3-user runs have an unknown cause.
+* A single critical path (the proposal's depth-first search) misses request types with their own bottleneck; the CRISP-style critical shares fix that for explanation; feeding them to the agent did **not** measurably improve its scaling in a controlled same-budget experiment (`docs/TRAINTICKET.md`), so they stay off by default (`CRITICAL_PATH_SOURCE=dfs`).
 * The learned policy's advantage over a *tuned* HPA is **small and within seed noise** (see the analysis above); RL training is
   high-variance here (headline score 0.195-0.255 across seeds), and more seeds per ablation arm would be needed to settle the topology question.
 * **Resize churn.** The agent re-sizes pods often (every service, whenever its resize cooldown of 6 steps and 15 % deadband allow); each resize
   is a rolling restart. The in-cluster smoke test showed Deployments rolling nearly continuously, which costs capacity and start-up CPU and probably
   contributes to the live gap. A wider deadband / longer cooldown in the guard (and in training) is the obvious next step; not done.
-* Topology discovery adds services/edges but never removes them (a thin trace sample cannot tell "removed" from "not sampled").
+* In the demo-app mode topology discovery adds services/edges but never removes them; the Train-Ticket (`METRICS_SOURCE=otel`) mode learns the graph from traces only, with decay and an expiry that does not run while the system is idle.
 * Rolling deployments of the services themselves are not coordinated with scaling actions.
 
 ---
@@ -465,21 +491,22 @@ specifies; the per-request latency a client sees is a probability mixture over c
 ├── deploy/compose/  docker-compose.yml  Makefile  .github/workflows/ci.yml
 ├── docs/TAF_TRACEABILITY.md      proposal requirement → code → test → status
 ├── traffic-generator/            open-loop Poisson generator + calibration load test
-├── scripts/                      numbered, run in order (+ gen_manifests.py, windows/)
+├── profiles/                     trainticket.env (settings for the real Train-Ticket); auto-<ns>.env is generated by scripts/20 (git-ignored)
+├── scripts/                      numbered, run in order (+ gen_manifests.py, windows/); 19-21: real Train-Ticket, any-cluster launcher, staged bottleneck
 └── autoscaler/
     ├── models/                   trained MO-TD3 checkpoints (models/seeds/ for extra seeds)
     ├── results/                  ablation, Pareto, live-cluster results, training curves (JSON)
     ├── tests/                    unit + integration tests (components, clients, engines, API, agent, eval, manifests)
     └── src/
         ├── config.py  topologies.py     tunables · demo6 / trainticket14
-        ├── topology_intel/              graph_builder (SDG, EHG, features) · dual_gcn · critical_path (DFS)
+        ├── topology_intel/              graph_builder (SDG, EHG, features) · dual_gcn · critical_path (DFS) · live_topology (graph from traces) · crisp (critical shares)
         ├── rl_agent/                    mo_td3 · trainer · env · rewards · replay · batching · controllers
         ├── simulation/                  simulator · service_model · calibration (+ sim_params.json)
         ├── safety/guards.py             bounds · memory floor · cooldowns · budget · breaker · staleness
         ├── baselines/rule_based.py      HPA · VPA · threshold · static
-        ├── evaluation/                  metrics · evaluate · pareto · train_agent · live_experiment · report
-        ├── data_collection/             Prometheus + Jaeger clients
+        ├── evaluation/                  metrics · evaluate · pareto · train_agent · live_experiment · report · critical_path_eval · scale_eval · regime_eval · pareto_regime · feature_ablation · tt_recorder
+        ├── data_collection/             Prometheus + Jaeger clients · otel_traces (rate/latency/blame from spans) · trainticket_metrics (cAdvisor + traces)
         ├── k8s_action/k8s_client.py     real scaling and resizing
-        ├── inference/                   engines (demo/live) · live_state · live_loop
-        └── dashboard/                   FastAPI + WebSocket + frontend
+        ├── inference/                   engines (demo/live/replay) · live_state · live_loop · auto_profile (inspect any cluster)
+        └── dashboard/                   FastAPI + WebSocket + frontend · record (record a run for replay)
 ```

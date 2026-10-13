@@ -168,6 +168,25 @@ Limits: one application, 91 requests with downstream time, hindsight-free but sm
 scaling decisions is NOT measured (it would need the simulator to produce the same shares and a retrain). It is available as an opt-in input
 (`CRITICAL_PATH_SOURCE=crisp`, off by default because the shipped models were trained with the chain) and always shown on the dashboard.
 
+### Does feeding the agent the critical set improve its scaling? (controlled experiment, `results/critical_path_feature_ablation.json`)
+
+The simulator now produces the same critical shares (`crisp.expected_critical_profile`: each request follows one chain, a service's share is its latency over the chain's), so an agent can be trained with them
+(`CRITICAL_PATH_SOURCE=crisp`; the two path inputs of every node keep their shape). Two agents were fine-tuned from `mo_td3_full` with the **same** budget (500 episodes), seed, hyper-parameters
+and topologies (4-20 services); only the path inputs differ (control: the depth-first chain; CRISP: the measured critical set). `python -m src.evaluation.feature_ablation`. Weighted score (lower is better) · SLO violations:
+
+| Topologies | Original | Control (chain) | CRISP (critical set) |
+|---|---|---|---|
+| demo6 | 0.197 · 1.9 % | 0.225 · 5.3 % | 0.235 · 4.4 % |
+| trainticket14 | 0.217 · 6.6 % | 0.245 · 4.1 % | 0.236 · 3.1 % |
+| heldout_4_12 | 0.230 · 7.7 % | 0.262 · 7.5 % | 0.269 · 12.0 % |
+| random_25 | 0.243 · 9.7 % | 0.290 · 7.3 % | 0.281 · 6.8 % |
+| random_50 | 0.284 · 23.5 % | 0.326 · 19.0 % | 0.311 · 16.8 % |
+
+**Result: no measurable improvement of the scaling decisions.** Against its fair control the CRISP inputs are slightly better on the larger topologies (14, 25, 50 services: 0.236 vs 0.245, 0.281 vs 0.290,
+0.311 vs 0.326) and slightly worse on the small ones; every difference is 0.015 or less, inside one seed's noise (+-0.026 in the main study), with one training seed. Both fine-tuned agents are worse than the
+original on the weighted score, so they are experiment artifacts (`models/mo_td3_ft_*.pt`), not models to deploy. The better critical-path *measurement* above therefore stays an explanation and
+a dashboard signal; `CRITICAL_PATH_SOURCE` stays `dfs` by default. More seeds, and applications with several request types or parallel fan-out, would be needed to settle whether it helps the agent.
+
 ## Live orchestration on the real cluster (2026-10-11)
 
 Setup: `ts-order-service` limited to 0.3 core (an operator action, restored afterwards) so that it saturates at a load the node can take;
