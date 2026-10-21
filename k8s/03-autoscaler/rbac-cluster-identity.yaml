@@ -1,0 +1,29 @@
+# OPTIONAL. Lets the agent read ONE cluster-scoped object, the kube-system Namespace, to learn its UID: a fingerprint of the cluster that
+# keeps the stored history of two clusters apart even if they are given the same name (src/persistence/identity.py).
+# Without it the agent still works; the history is then keyed on AUTOSCALER_CLUSTER_NAME alone.
+#
+# Apply it for the identity that runs the agent (the ServiceAccount below is the in-cluster one; for a remote agent change the subject to
+# the service account behind your kubeconfig, e.g. `autoscaler-agent` in `default`):
+#     kubectl apply -f k8s/03-autoscaler/rbac-cluster-identity.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: autoscaler-cluster-identity
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["kube-system"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: autoscaler-cluster-identity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: autoscaler-cluster-identity
+subjects:
+  - kind: ServiceAccount
+    name: autoscaler
+    namespace: autoscaler-poc

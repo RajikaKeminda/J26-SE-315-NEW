@@ -243,3 +243,16 @@ TOPOLOGY_MIN_CALLS = _env_float("TOPOLOGY_MIN_CALLS", 2.0)
 NODE_MEMORY_RESERVE_MB = _env_float("NODE_MEMORY_RESERVE_MB", 768.0)
 ALLOW_RESIZE = os.environ.get("ALLOW_RESIZE", "1") == "1"
 CONTROLLED_SERVICES = [x.strip() for x in os.environ.get("CONTROLLED_SERVICES", "").split(",") if x.strip()]
+
+# ---------------------------------------------------------------------------
+# Persistence (src/persistence/): PostgreSQL history of what the agent saw and did, kept apart per cluster.
+# Empty AUTOSCALER_DATABASE_URL = off (nothing is written, nothing else changes). Only the modes listed are stored; demo and
+# replay never are. The cluster is identified by AUTOSCALER_CLUSTER_NAME and/or the UID of its kube-system namespace.
+# ---------------------------------------------------------------------------
+DATABASE_URL = os.environ.get("AUTOSCALER_DATABASE_URL", "")
+CLUSTER_NAME = os.environ.get("AUTOSCALER_CLUSTER_NAME", "").strip()
+PERSIST_MODES = [x.strip() for x in os.environ.get("AUTOSCALER_PERSIST_MODES", "live").split(",") if x.strip()]
+STORE_FRAMES = os.environ.get("AUTOSCALER_STORE_FRAMES", "0") == "1"
+RETENTION_METRICS_HOURS = _env_float("RETENTION_METRICS_HOURS", 24.0)        # service_metrics and frames
+RETENTION_HISTORY_DAYS = _env_float("RETENTION_HISTORY_DAYS", 90.0)          # steps, actions, critical paths, violations, events
+CRITICAL_PATH_SNAPSHOT_EVERY = _env_int("CRITICAL_PATH_SNAPSHOT_EVERY", 10)  # steps between stored critical paths (a change is always stored)

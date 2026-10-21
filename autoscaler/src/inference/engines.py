@@ -21,6 +21,7 @@ import numpy as np
 
 from src import config
 from src.baselines.rule_based import BASELINES
+from src.persistence.sink import NullSink
 from src.rl_agent import rewards
 from src.rl_agent.controllers import RLController, RuleController
 from src.rl_agent.env import AutoscalerEnv, topology_base_rps
@@ -96,6 +97,13 @@ class BaseEngine:
         self.step_i = 0
         self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
         self.edge_calls = {}
+        self.sink = NullSink()                    # replaced by the live engine when a database is configured (src/persistence)
+
+    def persistence_status(self):
+        return self.sink.status()
+
+    def close(self):
+        self.sink.close()
 
     # -- control surface ------------------------------------------------
     def set_controller(self, name):
@@ -293,15 +301,24 @@ class LiveEngine(BaseEngine):
         self.guard = SafetyGuard(services=self.services, budget=config.live_budget(len(self.services)))
         self._last_ok_ts = None
         self._last_payload = None
+        self._extras = {}
         self._rebuild_controller()
         if self.autodiscover:
             self._rediscover()
+        self._open_sink()
+
+    def _open_sink(self):
+        from src import persistence
+        self.sink = persistence.make_sink(self.mode, self.shadow, self.controller_name, self.policy_name, None,
+                                          k8s=self._k8s, entry=self.entry)
 
     def reset(self, scenario=None):
         self.step_i = 0
         self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
         self.guard.reset()
         self.controller.reset()
+        self.sink.close()                         # step numbers start again: a new run, so (run, step) stays unique
+        self._open_sink()
 
     # -- topology ---------------------------------------------------------
     def _rediscover(self):
@@ -464,6 +481,13 @@ class LiveEngine(BaseEngine):
 
     # -- main tick ----------------------------------------------------------
     def tick(self):
+        """One control step, then (when a database is configured) its record. The sink only queues; it cannot fail the step."""
+        self._extras = {}
+        payload = self._tick()
+        self.sink.record_step(payload, self._extras)
+        return payload
+
+    def _tick(self):
         if self.autodiscover and self.step_i % REDISCOVER_EVERY_TICKS == 0:
             self._rediscover()
 
@@ -511,6 +535,7 @@ class LiveEngine(BaseEngine):
                                               physical_only=_is_baseline(self.controller))
 
         guard_approved = {svc: dict(a) for svc, a in approved.items()}        # what the guard let through, before the cluster-level vetoes
+        self._extras = {"guard_approved": {svc: g["dr"] for svc, g in guard_approved.items()}}
         self._apply_cluster_safety(approved, reasons, metrics, prom)
         for svc in list(approved):
             if not self._controlled(svc):
@@ -550,14 +575,16 @@ class ReplayEngine(BaseEngine):
     and says so (mode "replay", a banner on the page). It computes nothing and touches no cluster."""
     mode = "replay"
 
-    def __init__(self, path, agent=None, policy_name=None, controller="mo_td3", w=config.DEFAULT_PREFERENCE):
+    def __init__(self, path, agent=None, policy_name=None, controller="mo_td3", w=config.DEFAULT_PREFERENCE, frames=None):
+        """path: JSONL recorded with src/dashboard/record.py - or `frames`: payloads already loaded (from the history database)."""
         super().__init__(agent, policy_name, controller, w, shadow=True)
         import json
-        with open(path) as f:
-            self.frames = [json.loads(l) for l in f if l.strip()]
-        self.frames = [p for p in self.frames if p.get("nodes")]
+        if frames is None:
+            with open(path) as f:
+                frames = [json.loads(l) for l in f if l.strip()]
+        self.frames = [p for p in frames if p.get("nodes")]
         if not self.frames:
-            raise ValueError(f"{path}: no recorded payloads")
+            raise ValueError(f"{path or 'the history database'}: no recorded payloads")
         self.services = [n["id"] for n in self.frames[0]["nodes"]]
         self.call_graph, self.entry = {}, self.frames[0]["nodes"][0]["id"]
         self._rebuild_controller = lambda: None

@@ -5,3 +5,4 @@ uvicorn[standard]>=0.32
 websockets>=13.0
 requests>=2.31
 kubernetes>=31.0
+psycopg[binary]>=3.2

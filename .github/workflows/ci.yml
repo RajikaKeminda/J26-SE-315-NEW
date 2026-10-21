@@ -8,6 +8,19 @@ jobs:
   test:
     name: unit + integration tests
     runs-on: ubuntu-latest
+    services:
+      postgres:                      # the history database tests (tests/test_persistence_pg.py)
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: autoscaler
+          POSTGRES_USER: autoscaler
+          POSTGRES_PASSWORD: ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U autoscaler -d autoscaler" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://autoscaler:ci-password@127.0.0.1:5432/autoscaler
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

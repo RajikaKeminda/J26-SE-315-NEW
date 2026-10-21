@@ -1,0 +1,32 @@
+# PostgreSQL for the autoscaler's history (actions, metrics, critical paths, SLO violations). Runs next to the agent:
+#
+#   bash scripts/22_db_up.sh                 # start it and print the connection URL
+#   docker compose -f docker-compose.db.yml down      # stop (the data stays in the volume)
+#   docker compose -f docker-compose.db.yml down -v   # stop and DELETE the data
+#
+# Local development credentials, bound to 127.0.0.1 only. Override with AUTOSCALER_DB_PASSWORD / AUTOSCALER_DB_PORT.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: autoscaler-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: autoscaler
+      POSTGRES_USER: autoscaler
+      POSTGRES_PASSWORD: ${AUTOSCALER_DB_PASSWORD:-autoscaler-local}
+    ports:
+      - "127.0.0.1:${AUTOSCALER_DB_PORT:-5432}:5432"
+    volumes:
+      - autoscaler-pg:/var/lib/postgresql/data
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=30", "-c", "work_mem=4MB"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoscaler -d autoscaler"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+volumes:
+  autoscaler-pg:

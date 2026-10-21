@@ -224,6 +224,13 @@ tr:last-child td{border-bottom:none}
   <div id="evProfile" style="margin-top:16px"></div>
 </div>
 
+<div class="card" id="histCard" style="margin-bottom:14px">
+  <h2>History <span class="sel-inline"><select class="btn" id="histCluster" aria-label="cluster"></select>
+    <select class="btn" id="histHours" aria-label="period"><option value="1">1 h</option><option value="6">6 h</option><option value="24" selected>24 h</option><option value="168">7 d</option><option value="2160">90 d</option></select></span></h2>
+  <div class="sub" id="histSub">What the agent saw and did, stored per cluster in PostgreSQL.</div>
+  <div id="histBody" class="empty">history is off — set AUTOSCALER_DATABASE_URL (docs/PERSISTENCE.md)</div>
+</div>
+
 <div class="grid" style="grid-template-columns:1.55fr 1fr">
   <div class="card">
     <h2>Services</h2>
@@ -643,6 +650,79 @@ async function loadStatic(){
   try{const r=await (await fetch('/api/training')).json(); if(r.available) drawCurves(r.results);}catch(e){}
 }
 
+/* ---------- history (PostgreSQL) ---------- */
+let histTimer=null;
+async function jget(url){const r=await fetch(url); if(!r.ok) throw new Error(r.status); return r.json();}
+function drawHistChart(steps,viol,acts,hours){
+  const W=640,H=150,pad={l:40,r:34,t:10,b:20};
+  if(steps.length<2) return '<div class="empty">no steps stored for this period yet</div>';
+  const t0=new Date(steps[0].ts).getTime(), t1=new Date(steps[steps.length-1].ts).getTime()||t0+1, span=Math.max(t1-t0,1);
+  const slo=steps[steps.length-1].slo_ms||0;
+  const maxL=Math.max(slo*1.5,...steps.map(r=>Math.min(r.p95_ms||0,(slo||1)*6)));
+  const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  const X=t=>pad.l+((new Date(t).getTime()-t0)/span)*iw, Y=v=>pad.t+ih-(Math.min(v,maxL)/maxL)*ih;
+  let g='';
+  viol.forEach(v=>{const a=X(v.started_at), b=v.ended_at?X(v.ended_at):W-pad.r; g+=`<rect x="${a}" y="${pad.t}" width="${Math.max(b-a,2)}" height="${ih}" fill="rgba(255,107,138,.16)"/>`;});
+  g+=`<line x1="${pad.l}" y1="${Y(slo)}" x2="${W-pad.r}" y2="${Y(slo)}" class="slo-line"/><text class="axis" x="${W-pad.r+3}" y="${Y(slo)+3}" fill="#FF6B8A">SLO</text>`;
+  g+=`<path d="M${steps.map(r=>`${X(r.ts)},${Y(r.p95_ms||0)}`).join(' L')}" class="line-lat"/>`;
+  acts.filter(a=>a.outcome==='applied'||a.outcome==='modified').forEach(a=>{
+    const up=(a.applied_dr||0)>=0, x=X(a.ts), y=pad.t+ih+2;
+    g+=`<path d="M${x},${y} l-3,${up?-6:6} l6,0 Z" fill="${a.shadow?'var(--dimmer)':up?'var(--flow)':'var(--agent)'}"><title>${esc(a.service)} ${a.applied_dr>0?'+':''}${a.applied_dr}${a.shadow?' (shadow)':''}</title></path>`;});
+  g+=`<text class="axis" x="4" y="${pad.t+5}">${Math.round(maxL)}ms</text><text class="axis" x="4" y="${pad.t+ih}">0</text>`;
+  g+=`<text class="axis" x="${pad.l}" y="${H-4}">${new Date(t0).toLocaleString()}</text><text class="axis" x="${W-pad.r}" y="${H-4}" text-anchor="end">${new Date(t1).toLocaleString()}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:160px" preserveAspectRatio="none">${g}</svg>
+    <div class="legend"><span><i style="background:var(--flow)"></i>p95</span><span><i style="background:rgba(255,107,138,.5)"></i>SLO violation</span>
+    <span><i style="background:var(--flow)"></i>scale-up applied</span><span><i style="background:var(--agent)"></i>scale-down applied</span><span><i style="background:var(--dimmer)"></i>shadow decision</span></div>`;
+}
+async function drawPersistState(){
+  try{
+    const p=(await jget('/api/state')).persistence||{};
+    $('histSub').textContent=!p.enabled?'What the agent saw and did, stored per cluster in PostgreSQL. Storing is off: '+(p.reason||'no database configured')+'.'
+      :p.state==='disabled'?'Not storing: '+(p.last_error||'cluster could not be identified')
+      :`Storing as "${p.cluster||'…'}" · ${p.written_steps} steps written${p.dropped?` · ${p.dropped} dropped`:''}${p.last_error?` · database problem: ${p.last_error}`:''}`;
+  }catch(e){}
+}
+async function drawHistory(){
+  drawPersistState();
+  const cl=$('histCluster'), hrs=$('histHours').value, body=$('histBody');
+  try{
+    const c=await jget('/api/clusters');
+    if(!c.clusters.length){body.className='empty'; body.textContent='the database is reachable but holds no cluster yet'; return;}
+    const keep=cl.value||c.current||c.clusters[0].id;
+    cl.innerHTML=c.clusters.map(x=>`<option value="${esc(x.id)}" ${x.id===keep?'selected':''}>${esc(x.name)} · ${esc(x.namespace)}${x.id===c.current?' (live)':''}</option>`).join('');
+    const q=`cluster=${encodeURIComponent(cl.value)}&hours=${hrs}`;
+    const get=(w,extra='')=>jget(`/api/history/${w}?${q}${extra}`);
+    const [steps,viol,acts,cps,sum,ev]=await Promise.all([get('steps','&limit=4000'),get('violations'),get('actions','&limit=400'),
+      get('critical-path','&changed_only=true&limit=12'),get('summary'),get('events','&limit=12')]);
+    const S=sum.data, ord=steps.data;
+    const replicaActs=acts.data.filter(a=>a.proposed_dr!==0||a.applied_dr!==0||a.outcome==='k8s_error'), hidden=acts.data.length-replicaActs.length;
+    body.className='';
+    const oc=Object.entries(S.actions_by_outcome||{}).map(([k,v])=>`${esc(k)} ${v}`).join(' · ')||'none';
+    const rs=Object.entries(S.reasons||{}).slice(0,6).map(([k,v])=>`${esc(k)} ${v}`).join(' · ')||'none';
+    body.innerHTML=drawHistChart(ord,viol.data,acts.data,hrs)+`
+      <div class="grid" style="grid-template-columns:1fr 1fr 1fr;margin:14px 0 0">
+        <div><div class="kv"><span>steps stored</span><span>${S.steps}</span><span>steps over SLO</span><span>${S.breached_steps}</span>
+          <span>violation episodes</span><span>${S.violation_episodes}</span><span>hold steps</span><span>${S.stale_steps}</span>
+          <span>worst p95</span><span>${S.max_p95_ms==null?'–':Math.round(S.max_p95_ms)+' ms'}</span></div>
+          <div class="small">actions: ${oc}<br>why blocked: ${rs}</div></div>
+        <div><div class="small" style="margin:0 0 6px">Last SLO violations</div>${viol.data.slice(0,6).map(v=>
+          `<div class="small" style="margin:0 0 4px;color:var(--ink)">${new Date(v.started_at).toLocaleTimeString()} · ${v.steps_breached} steps · peak ${Math.round(v.peak_p95_ms)} ms · ${v.actions} actions${v.breaker_opened?' · breaker':''}<br>
+          <span style="color:var(--dim)">critical then: ${(v.top_services||[]).slice(0,3).map(t=>esc(t.service)+' '+Math.round(t.share*100)+'%').join(', ')||'–'}</span></div>`).join('')||'<div class="empty">none</div>'}</div>
+        <div><div class="small" style="margin:0 0 6px">Critical path changes</div>${cps.data.slice(0,6).map(r=>
+          `<div class="small" style="margin:0 0 4px;color:var(--ink)">${new Date(r.ts).toLocaleTimeString()} · ${r.chain.map(x=>esc(x.replace(/^ts-|-service$/g,''))).join(' → ')}</div>`).join('')||'<div class="empty">none</div>'}
+          <div class="small" style="margin:10px 0 6px">Events</div>${ev.data.slice(0,5).map(e=>
+          `<div class="small" style="margin:0 0 3px">${new Date(e.ts).toLocaleTimeString()} · ${esc(e.type)}</div>`).join('')}</div>
+      </div>
+      <table style="margin-top:12px"><thead><tr><th>time</th><th>service</th><th>proposed</th><th>applied</th><th>outcome</th><th>why</th></tr></thead><tbody>${
+        replicaActs.slice(0,15).map(a=>`<tr><td>${new Date(a.ts).toLocaleTimeString()}</td><td>${esc(a.service)}</td><td>${a.proposed_dr>0?'+':''}${a.proposed_dr}</td>
+        <td>${a.applied_dr>0?'+':''}${a.applied_dr}${a.shadow?' <span class="tag">shadow</span>':''}</td><td>${esc(a.outcome)}</td><td>${esc((a.reason_codes||[]).join(', '))}</td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">no replica changes in this period</div></td></tr>'}</tbody></table>
+      <div class="small">${hidden?hidden+' resize-only or blocked-without-change rows not shown (all are stored: /api/history/actions)':''}</div>`;
+    cl.onchange=()=>drawHistory(); $('histHours').onchange=()=>drawHistory();
+  }catch(e){
+    body.className='empty'; body.textContent='history is off or unreachable — set AUTOSCALER_DATABASE_URL and start the database (scripts/22_db_up.sh)';
+  }
+}
+
 /* ---------- controls ---------- */
 let paused=false;
 async function post(url){try{await fetch(url,{method:'POST'});}catch(e){}}
@@ -677,7 +757,7 @@ function connect(){
   ws.onclose=()=>{const p=$('livePill'); p.className='pill alert'; p.textContent='disconnected — retrying'; setTimeout(connect,2500);};
   ws.onopen=()=>{const p=$('livePill'); p.className='pill on'; p.innerHTML='<span class="dot"></span>live';};
 }
-initControls().then(loadStatic); connect();
+initControls().then(loadStatic); connect(); drawHistory(); histTimer=setInterval(drawHistory,30000);
 </script>
 </body>
 </html>
