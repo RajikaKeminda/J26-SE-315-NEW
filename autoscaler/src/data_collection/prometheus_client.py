@@ -40,7 +40,7 @@ class QueryFailed(Exception):
 def _get(promql: str) -> list:
     try:
         resp = requests.get(f"{config.PROMETHEUS_URL}/api/v1/query",
-                            params={"query": promql}, timeout=5)
+                            params={"query": promql}, timeout=config.PROMETHEUS_TIMEOUT_SECONDS)
         resp.raise_for_status()
         body = resp.json()
         if body.get("status") != "success":

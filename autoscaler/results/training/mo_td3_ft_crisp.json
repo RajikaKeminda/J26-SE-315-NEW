@@ -1,0 +1,159 @@
+{
+  "arm": "mo_td3_full",
+  "seed": 21,
+  "episodes": 500,
+  "history": [
+    {
+      "episode": 50,
+      "val_scalarized": 0.32225511968135834,
+      "val_p95_ms": 255.69170204636995,
+      "val_cost": 13.653086914062499,
+      "val_slo_violation": 0.040624999999999994,
+      "seconds": 39.1,
+      "critic_loss": 0.1427,
+      "q_mean": -5.6281,
+      "actor_loss": 4.5282
+    },
+    {
+      "episode": 100,
+      "val_scalarized": 0.3439314868301153,
+      "val_p95_ms": 301.59613357398234,
+      "val_cost": 13.981953613281249,
+      "val_slo_violation": 0.0953125,
+      "seconds": 133.2,
+      "critic_loss": 0.1975,
+      "q_mean": -5.3169,
+      "actor_loss": 4.4732
+    },
+    {
+      "episode": 150,
+      "val_scalarized": 0.34209783375263214,
+      "val_p95_ms": 262.9565599586872,
+      "val_cost": 14.4801357421875,
+      "val_slo_violation": 0.08750000000000001,
+      "seconds": 240.1,
+      "critic_loss": 0.1859,
+      "q_mean": -5.2883,
+      "actor_loss": 4.498
+    },
+    {
+      "episode": 200,
+      "val_scalarized": 0.3310682512819767,
+      "val_p95_ms": 280.7922120614355,
+      "val_cost": 14.020869140624999,
+      "val_slo_violation": 0.08281250000000001,
+      "seconds": 354.7,
+      "critic_loss": 0.2201,
+      "q_mean": -5.6989,
+      "actor_loss": 4.8119
+    },
+    {
+      "episode": 250,
+      "val_scalarized": 0.3235421432182193,
+      "val_p95_ms": 289.89971251624826,
+      "val_cost": 13.567865722656249,
+      "val_slo_violation": 0.08125,
+      "seconds": 459.8,
+      "critic_loss": 0.1891,
+      "q_mean": -5.9537,
+      "actor_loss": 4.6889
+    },
+    {
+      "episode": 300,
+      "val_scalarized": 0.2926098695024848,
+      "val_p95_ms": 259.38258218830816,
+      "val_cost": 12.755694824218748,
+      "val_slo_violation": 0.042187499999999996,
+      "seconds": 553.9,
+      "critic_loss": 0.2298,
+      "q_mean": -5.9267,
+      "actor_loss": 4.7309
+    },
+    {
+      "episode": 350,
+      "val_scalarized": 0.2787487916648388,
+      "val_p95_ms": 291.69289086565544,
+      "val_cost": 11.946459472656251,
+      "val_slo_violation": 0.06875,
+      "seconds": 652.1,
+      "critic_loss": 0.1853,
+      "q_mean": -6.0697,
+      "actor_loss": 4.9131
+    },
+    {
+      "episode": 400,
+      "val_scalarized": 0.2719007721170783,
+      "val_p95_ms": 258.4554127333755,
+      "val_cost": 11.9530849609375,
+      "val_slo_violation": 0.059375,
+      "seconds": 745.1,
+      "critic_loss": 0.3931,
+      "q_mean": -6.5146,
+      "actor_loss": 5.1295
+    },
+    {
+      "episode": 450,
+      "val_scalarized": 0.29530225321650505,
+      "val_p95_ms": 691.1452347356166,
+      "val_cost": 11.8748310546875,
+      "val_slo_violation": 0.08906249999999999,
+      "seconds": 836.9,
+      "critic_loss": 0.1949,
+      "q_mean": -6.0898,
+      "actor_loss": 4.6108
+    },
+    {
+      "episode": 500,
+      "val_scalarized": 0.2645931448787451,
+      "val_p95_ms": 554.6231913999527,
+      "val_cost": 10.71198046875,
+      "val_slo_violation": 0.08124999999999999,
+      "seconds": 919.3,
+      "critic_loss": 0.3655,
+      "q_mean": -6.5996,
+      "actor_loss": 4.7237
+    }
+  ],
+  "best_val_scalarized": 0.2645931448787451,
+  "selected_fresh_val_scalarized": 0.25533472125728923,
+  "eval_preference": [
+    0.5,
+    0.35,
+    0.15
+  ],
+  "topology_training": "random 4-20 services, 2-5 tiers",
+  "init_from": "models/mo_td3_full.pt",
+  "hparams": {
+    "n_step": 3,
+    "explore_noise": 0.2,
+    "eps_start": 0.2,
+    "eps_end": 0.03,
+    "bc_weight": 1.0,
+    "bc_floor": 0.3,
+    "bc_decay_frac": 0.8,
+    "demo_target_range": [
+      0.35,
+      0.65
+    ],
+    "demo_cpus": [
+      0.25,
+      0.5,
+      1.0
+    ],
+    "default_pref_prob": 0.3,
+    "relabel_prob": 0.5,
+    "val_episodes": 16,
+    "top_k": 3,
+    "final_val_episodes": 48,
+    "fixed_topology_prob": 0.0,
+    "replica_head": "round",
+    "actor_lr": 5e-05,
+    "critic_lr": 0.0002,
+    "batch_size": 128,
+    "tau": 0.005,
+    "gamma": 0.95,
+    "policy_delay": 2,
+    "grad_clip": 5.0,
+    "randomize_initial": true
+  }
+}

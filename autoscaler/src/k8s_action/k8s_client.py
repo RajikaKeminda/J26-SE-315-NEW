@@ -41,6 +41,18 @@ def _load_client():
     return _apps_v1
 
 
+def cluster_identity():
+    """{'api_server': host, 'kube_uid': UID of the kube-system namespace or None}. The UID is a fingerprint of the cluster itself; reading it
+    needs `get` on that one namespace (k8s/03-autoscaler/rbac-cluster-identity.yaml) and is best effort: without it only the host is returned."""
+    _load_client()
+    out = {"api_server": client.Configuration.get_default_copy().host, "kube_uid": None}
+    try:
+        out["kube_uid"] = client.CoreV1Api().read_namespace("kube-system").metadata.uid
+    except Exception:
+        pass
+    return out
+
+
 def reset_client():
     """Drops the cached client (tests / credential rotation)."""
     global _apps_v1
@@ -75,6 +87,26 @@ def _container(dep, service):
     return dep.spec.template.spec.containers[0]
 
 
+def _list_deployments(apps_v1, namespace):
+    """{name: Deployment} for the whole namespace in ONE API call (a 50-service cluster would otherwise need 50 round
+    trips per decision), or None when listing is not allowed (the caller falls back to one read per service)."""
+    try:
+        return {d.metadata.name: d for d in apps_v1.list_namespaced_deployment(namespace=namespace).items}
+    except client.exceptions.ApiException as e:
+        print(f"[k8s_client] cannot list deployments ({e.status} {e.reason}); reading them one by one")
+        return None
+
+
+def _state_of(dep, svc):
+    limits = (_container(dep, svc).resources.limits or {}) if _container(dep, svc).resources else {}
+    return {
+        "replicas": dep.spec.replicas if dep.spec.replicas is not None else (dep.status.replicas or 0),
+        "ready": dep.status.ready_replicas or 0,
+        "cpu": parse_cpu(limits.get("cpu")) or app_config.CPU_DEFAULT,
+        "mem": parse_mem_mb(limits.get("memory")) or float(app_config.MEM_DEFAULT_MB),
+    }
+
+
 def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
     """Real state per Deployment: desired + ready replicas and the CPU/memory limits of
     the pod template (what a new pod will get). Services that cannot be read are omitted
@@ -82,20 +114,54 @@ def get_state(services: list[str], namespace: str = None) -> dict[str, dict]:
     namespace = namespace or app_config.NAMESPACE
     apps_v1 = _load_client()
     state = {}
+    listed = _list_deployments(apps_v1, namespace)
     for svc in services:
-        try:
-            dep = apps_v1.read_namespaced_deployment(name=svc, namespace=namespace)
-        except client.exceptions.ApiException as e:
-            print(f"[k8s_client] failed to read {svc}: {e.status} {e.reason}")
-            continue
-        limits = (_container(dep, svc).resources.limits or {}) if _container(dep, svc).resources else {}
-        state[svc] = {
-            "replicas": dep.spec.replicas if dep.spec.replicas is not None else (dep.status.replicas or 0),
-            "ready": dep.status.ready_replicas or 0,
-            "cpu": parse_cpu(limits.get("cpu")) or app_config.CPU_DEFAULT,
-            "mem": parse_mem_mb(limits.get("memory")) or float(app_config.MEM_DEFAULT_MB),
-        }
+        if listed is not None:
+            dep = listed.get(svc)
+            if dep is None:
+                print(f"[k8s_client] failed to read {svc}: no such deployment in {namespace}")
+                continue
+        else:
+            try:
+                dep = apps_v1.read_namespaced_deployment(name=svc, namespace=namespace)
+            except client.exceptions.ApiException as e:
+                print(f"[k8s_client] failed to read {svc}: {e.status} {e.reason}")
+                continue
+        state[svc] = _state_of(dep, svc)
     return state
+
+
+def pod_ages(namespace: str = None) -> dict[str, float]:
+    """{deployment: age in seconds of its YOUNGEST pod}, one API call. The safety layer uses it to know that a service was
+    scaled or restarted recently even if this process was restarted since. {} when pods cannot be listed."""
+    import datetime
+    import re
+    namespace = namespace or app_config.NAMESPACE
+    try:
+        _load_client()
+        pods = client.CoreV1Api().list_namespaced_pod(namespace=namespace).items
+    except Exception as e:
+        print(f"[k8s_client] cannot list pods ({e}); pod ages unknown")
+        return {}
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ages: dict[str, float] = {}
+    for p in pods:
+        m = re.match(r"^(.+)-[a-z0-9]+-[a-z0-9]+$", p.metadata.name)
+        if not m or not p.metadata.creation_timestamp or p.metadata.deletion_timestamp:
+            continue
+        age = (now - p.metadata.creation_timestamp).total_seconds()
+        ages[m.group(1)] = min(age, ages.get(m.group(1), age))
+    return ages
+
+
+def get_all_state(namespace: str = None) -> dict[str, dict]:
+    """State of EVERY Deployment in the namespace, from ONE list call (same fields as get_state). Raises if listing is not
+    allowed - there is no per-service fallback when the names are not known."""
+    namespace = namespace or app_config.NAMESPACE
+    listed = _list_deployments(_load_client(), namespace)
+    if listed is None:
+        raise RuntimeError(f"cannot list deployments in {namespace}")
+    return {name: _state_of(dep, name) for name, dep in listed.items()}
 
 
 def rollout_complete(services: list[str], namespace: str = None) -> bool:

@@ -41,21 +41,35 @@ def parse_hparams(pairs):
     return hp
 
 
-def main(arm, episodes, seed, demo_episodes, updates_per_episode, out=None, hp=None):
+def build_topology_options(sizes, target, target_prob, val_sizes):
+    """Training topologies and validation set for fine-tuning (see rl_agent.trainer.train_agent)."""
+    import numpy as np
+    from src.simulation.simulator import random_topology
+    from src.topologies import DEMO6, get_topology
+    targets = [get_topology(t) for t in (target or [])]
+    val = None
+    if targets or val_sizes:
+        val = [DEMO6] + targets + [random_topology(np.random.default_rng(880_000 + 31 * n), n, n) for n in (val_sizes or [])]
+    return {"sizes": tuple(sizes), "target_topologies": targets or None, "target_prob": target_prob if targets else 0.0,
+            "val_topologies": val}
+
+
+def main(arm, episodes, seed, demo_episodes, updates_per_episode, out=None, hp=None, init_from=None, topo_opts=None, curve_out=None):
     torch.set_num_threads(1)           # tiny tensors: threading only adds overhead
     hp = hp or HParams()
     print(f"Training '{arm}' seed={seed} for {episodes} episodes  {ARMS[arm]}", flush=True)
     agent, best_state, meta = train_agent(arm, episodes=episodes, seed=seed,
                                           demo_episodes=demo_episodes,
                                           updates_per_episode=updates_per_episode, hp=hp,
-                                          log=lambda *a: print(*a, flush=True))
+                                          log=lambda *a: print(*a, flush=True), init_from=init_from,
+                                          **(topo_opts or {}))
     meta["hparams"] = dataclasses.asdict(hp)
     path = out or checkpoint_path(arm, seed)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     state = best_state or agent.state()
     state.update({k: v for k, v in meta.items() if k != "history"})
     torch.save(state, path)
-    curve = os.path.join(config.RESULTS_DIR, "training", f"{arm}_s{seed}.json")
+    curve = curve_out or os.path.join(config.RESULTS_DIR, "training", f"{arm}_s{seed}.json")
     os.makedirs(os.path.dirname(curve), exist_ok=True)
     with open(curve, "w") as f:
         json.dump(meta, f, indent=2)
@@ -74,5 +88,12 @@ if __name__ == "__main__":
     ap.add_argument("--hp", nargs="*", default=[], metavar="KEY=VALUE",
                     help="override training hyper-parameters, e.g. --hp n_step=1 bc_floor=0.2")
     ap.add_argument("--curve-out", default=None, help="learning-curve JSON path (default results/training/)")
+    ap.add_argument("--init-from", default=None, help="fine-tune: warm-start from this checkpoint")
+    ap.add_argument("--sizes", type=int, nargs=2, default=[4, 12], metavar=("MIN", "MAX"),
+                    help="service-count range of the random training topologies")
+    ap.add_argument("--target", nargs="*", default=[], help="named topologies mixed into training and validation, e.g. trainticket-sim")
+    ap.add_argument("--target-prob", type=float, default=0.4, help="share of training episodes on the target topologies")
+    ap.add_argument("--val-sizes", type=int, nargs="*", default=[], help="add random validation topologies of these sizes")
     a = ap.parse_args()
-    main(a.arm, a.episodes, a.seed, a.demo_episodes, a.updates_per_episode, a.out, parse_hparams(a.hp))
+    main(a.arm, a.episodes, a.seed, a.demo_episodes, a.updates_per_episode, a.out, parse_hparams(a.hp), a.init_from,
+         build_topology_options(a.sizes, a.target, a.target_prob, a.val_sizes), a.curve_out)

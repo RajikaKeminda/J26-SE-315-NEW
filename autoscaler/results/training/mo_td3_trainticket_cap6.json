@@ -1,0 +1,225 @@
+{
+  "arm": "mo_td3_replica_only",
+  "seed": 9,
+  "episodes": 800,
+  "history": [
+    {
+      "episode": 50,
+      "val_scalarized": 0.22149423162142434,
+      "val_p95_ms": 186.54420655813215,
+      "val_cost": 19.1947265625,
+      "val_slo_violation": 0.021666666666666667,
+      "seconds": 32.6,
+      "critic_loss": 0.3279,
+      "q_mean": -9.2919,
+      "actor_loss": 7.6157
+    },
+    {
+      "episode": 100,
+      "val_scalarized": 0.20410989224910736,
+      "val_p95_ms": 188.54189312138382,
+      "val_cost": 17.839804687500003,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 118.8,
+      "critic_loss": 0.2333,
+      "q_mean": -8.4945,
+      "actor_loss": 7.365
+    },
+    {
+      "episode": 150,
+      "val_scalarized": 0.1982298930486043,
+      "val_p95_ms": 186.28859485635743,
+      "val_cost": 17.294531250000002,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 197.2,
+      "critic_loss": 0.2659,
+      "q_mean": -8.2839,
+      "actor_loss": 6.8651
+    },
+    {
+      "episode": 200,
+      "val_scalarized": 0.20862800379594168,
+      "val_p95_ms": 184.82824804300648,
+      "val_cost": 18.065625,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 274.8,
+      "critic_loss": 0.537,
+      "q_mean": -7.777,
+      "actor_loss": 6.4219
+    },
+    {
+      "episode": 250,
+      "val_scalarized": 0.2225412686665853,
+      "val_p95_ms": 184.79775107502965,
+      "val_cost": 19.2828515625,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 352.7,
+      "critic_loss": 0.4702,
+      "q_mean": -7.8581,
+      "actor_loss": 6.49
+    },
+    {
+      "episode": 300,
+      "val_scalarized": 0.19349568784236912,
+      "val_p95_ms": 186.3228440120332,
+      "val_cost": 16.556484375,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 433.1,
+      "critic_loss": 0.4793,
+      "q_mean": -7.1564,
+      "actor_loss": 5.7428
+    },
+    {
+      "episode": 350,
+      "val_scalarized": 0.18937855064868928,
+      "val_p95_ms": 188.29267154429263,
+      "val_cost": 16.1140234375,
+      "val_slo_violation": 0.024999999999999998,
+      "seconds": 509.1,
+      "critic_loss": 0.3117,
+      "q_mean": -7.5693,
+      "actor_loss": 6.3047
+    },
+    {
+      "episode": 400,
+      "val_scalarized": 0.19021552503108977,
+      "val_p95_ms": 186.3220825002758,
+      "val_cost": 16.336171874999998,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 582.9,
+      "critic_loss": 0.39,
+      "q_mean": -7.2361,
+      "actor_loss": 6.0071
+    },
+    {
+      "episode": 450,
+      "val_scalarized": 0.19344696998596192,
+      "val_p95_ms": 186.3724534289532,
+      "val_cost": 16.692343750000003,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 639.5,
+      "critic_loss": 0.3342,
+      "q_mean": -6.8006,
+      "actor_loss": 5.8251
+    },
+    {
+      "episode": 500,
+      "val_scalarized": 0.1962592343489329,
+      "val_p95_ms": 185.07018938807718,
+      "val_cost": 17.03015625,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 698.0,
+      "critic_loss": 0.1964,
+      "q_mean": -6.6846,
+      "actor_loss": 5.6771
+    },
+    {
+      "episode": 550,
+      "val_scalarized": 0.1914728303750356,
+      "val_p95_ms": 184.83733728114237,
+      "val_cost": 16.57484375,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 755.9,
+      "critic_loss": 0.3502,
+      "q_mean": -6.6615,
+      "actor_loss": 5.6236
+    },
+    {
+      "episode": 600,
+      "val_scalarized": 0.19324115018049878,
+      "val_p95_ms": 183.912435684403,
+      "val_cost": 16.762109374999998,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 813.9,
+      "critic_loss": 0.3421,
+      "q_mean": -6.44,
+      "actor_loss": 4.9308
+    },
+    {
+      "episode": 650,
+      "val_scalarized": 0.19338414569695792,
+      "val_p95_ms": 184.13557179267005,
+      "val_cost": 16.7712890625,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 871.8,
+      "critic_loss": 0.2225,
+      "q_mean": -6.5864,
+      "actor_loss": 5.4263
+    },
+    {
+      "episode": 700,
+      "val_scalarized": 0.1915798256794612,
+      "val_p95_ms": 184.0089761420646,
+      "val_cost": 16.6244140625,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 930.4,
+      "critic_loss": 0.3034,
+      "q_mean": -6.0803,
+      "actor_loss": 4.6887
+    },
+    {
+      "episode": 750,
+      "val_scalarized": 0.18884572386741638,
+      "val_p95_ms": 184.65148486692985,
+      "val_cost": 16.3857421875,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 992.0,
+      "critic_loss": 0.28,
+      "q_mean": -6.4671,
+      "actor_loss": 5.0005
+    },
+    {
+      "episode": 800,
+      "val_scalarized": 0.1876068820556005,
+      "val_p95_ms": 184.98749940846199,
+      "val_cost": 16.3159765625,
+      "val_slo_violation": 0.023333333333333334,
+      "seconds": 1054.6,
+      "critic_loss": 0.3317,
+      "q_mean": -6.348,
+      "actor_loss": 5.3377
+    }
+  ],
+  "best_val_scalarized": 0.1876068820556005,
+  "selected_fresh_val_scalarized": 0.19054250605404377,
+  "eval_preference": [
+    0.5,
+    0.35,
+    0.15
+  ],
+  "topology_training": "random 4-14 services, 2-5 tiers + 1 target topologies p=0.7",
+  "init_from": "models/mo_td3_replica_only.pt",
+  "hparams": {
+    "n_step": 3,
+    "explore_noise": 0.2,
+    "eps_start": 0.2,
+    "eps_end": 0.03,
+    "bc_weight": 1.0,
+    "bc_floor": 0.3,
+    "bc_decay_frac": 0.8,
+    "demo_target_range": [
+      0.35,
+      0.65
+    ],
+    "demo_cpus": [
+      0.25,
+      0.5,
+      1.0
+    ],
+    "default_pref_prob": 0.3,
+    "relabel_prob": 0.5,
+    "val_episodes": 16,
+    "top_k": 3,
+    "final_val_episodes": 48,
+    "fixed_topology_prob": 0.0,
+    "replica_head": "round",
+    "actor_lr": 5e-05,
+    "critic_lr": 0.0002,
+    "batch_size": 128,
+    "tau": 0.005,
+    "gamma": 0.95,
+    "policy_delay": 2,
+    "grad_clip": 5.0,
+    "randomize_initial": true
+  }
+}

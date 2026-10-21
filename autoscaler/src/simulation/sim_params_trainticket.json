@@ -1,0 +1,19 @@
+{
+ "note": "Train-Ticket (Java/Spring) variant of sim_params.json: only memory, idle CPU and the latency floor differ; the queueing / throttling terms are the fitted values of the demo service (not re-fitted for Java).",
+ "params": {
+  "cpu_overhead_ms": 0.42358769667978713,
+  "idle_cores": 0.02,
+  "base_extra_ms": 10.0,
+  "kappa": 0.9840625000000001,
+  "cfs_period_ms": 100.0,
+  "gil_cores": 1.0,
+  "rho_cap": 0.92,
+  "tail_idle": 1.6843750000000002,
+  "tail_busy": 2.56162109375,
+  "tail_knee": 0.5,
+  "p99_over_p95": 1.35,
+  "mem_base_mb": 330.0,
+  "mem_per_inflight_mb": 0.25,
+  "request_timeout_s": 10.0
+ }
+}

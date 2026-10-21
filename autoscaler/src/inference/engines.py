@@ -21,6 +21,7 @@ import numpy as np
 
 from src import config
 from src.baselines.rule_based import BASELINES
+from src.persistence.sink import NullSink
 from src.rl_agent import rewards
 from src.rl_agent.controllers import RLController, RuleController
 from src.rl_agent.env import AutoscalerEnv, topology_base_rps
@@ -95,6 +96,14 @@ class BaseEngine:
         self.controller_name = controller if (controller != "mo_td3" or agent is not None) else "hpa"
         self.step_i = 0
         self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
+        self.edge_calls = {}
+        self.sink = NullSink()                    # replaced by the live engine when a database is configured (src/persistence)
+
+    def persistence_status(self):
+        return self.sink.status()
+
+    def close(self):
+        self.sink.close()
 
     # -- control surface ------------------------------------------------
     def set_controller(self, name):
@@ -112,6 +121,9 @@ class BaseEngine:
 
     def _rebuild_controller(self):
         self.controller = make_controller(self.controller_name, self.services, self.agent, self.w)
+
+    def _controlled(self, svc):
+        return not config.CONTROLLED_SERVICES or svc in config.CONTROLLED_SERVICES
 
     # -- payload --------------------------------------------------------
     def _push_history(self, e2e, cost, rps, slo_ms):
@@ -135,6 +147,7 @@ class BaseEngine:
                 on_path = (caller in crit_path and callee in crit_path
                            and crit_path.index(callee) - crit_path.index(caller) == 1)
                 edges.append({"source": caller, "target": callee, "traffic_share": round(share, 3),
+                              "calls": self.edge_calls.get(f"{caller}->{callee}"),
                               "latency_pressure": round(float(ehg[idx[caller], idx[callee]]), 3),
                               "on_critical_path": on_path})
 
@@ -151,6 +164,7 @@ class BaseEngine:
                 "requests": round(m["requests"], 1), "utilization": round(util, 3),
                 "mem_utilization": round(m.get("mem_utilization", 0.0), 3),
                 "on_critical_path": s in crit_path, "is_entry": s == entry,
+                "controlled": self._controlled(s),
                 "proposed_delta": int(prop.get("dr", 0)), "applied_delta": int(app.get("dr", 0)),
                 "proposed_cpu": round(prop.get("cpu", m["cpu"]), 3), "applied_cpu": round(app.get("cpu", m["cpu"]), 3),
                 "proposed_mem": round(prop.get("mem", m["mem"])), "applied_mem": round(app.get("mem", m["mem"])),
@@ -261,30 +275,50 @@ class LiveEngine(BaseEngine):
 
     def __init__(self, agent, policy_name=None, shadow=False, autodiscover=None,
                  controller="mo_td3", w=config.DEFAULT_PREFERENCE):
-        from src.data_collection import prometheus_client, jaeger_client
+        from src.data_collection import jaeger_client
         from src.inference.live_state import LiveStateBuilder
         from src.k8s_action import k8s_client
-        self._prom, self._jaeger, self._k8s = prometheus_client, jaeger_client, k8s_client
+        if config.METRICS_SOURCE == "trainticket":
+            from src.data_collection import trainticket_metrics as metrics_source   # OTel spans + cAdvisor
+        else:
+            from src.data_collection import prometheus_client as metrics_source     # the demo app's own metrics
+        self._prom, self._jaeger, self._k8s = metrics_source, jaeger_client, k8s_client
         super().__init__(agent, policy_name, controller, w, shadow)
         self.topology = config.TOPOLOGY
         self.services, self.entry = list(config.SERVICES), config.ENTRY_SERVICE
         self.call_graph = {k: list(v) for k, v in config.CALL_GRAPH.items()}
         self.autodiscover = config.AUTODISCOVER_TOPOLOGY if autodiscover is None else autodiscover
+        self.live_topology = None
+        if config.METRICS_SOURCE == "trainticket":                  # graph learned only from live traces
+            from src.topology_intel.live_topology import LiveTopology
+            self.live_topology = LiveTopology(self.entry, config.TOPOLOGY_HALF_LIFE_S,
+                                              config.TOPOLOGY_TTL_S, config.TOPOLOGY_MIN_CALLS)
+            self.autodiscover = False
+        self.edge_calls = {}
         self.topology_source = "config"
         self.builder = LiveStateBuilder(self.services, self.entry, self.call_graph,
-                                        priors={s: self.topology.work(s) for s in self.services})
+                                        priors={**self.topology.work_ms, **{s: self.topology.work(s) for s in self.services}})
         self.guard = SafetyGuard(services=self.services, budget=config.live_budget(len(self.services)))
         self._last_ok_ts = None
         self._last_payload = None
+        self._extras = {}
         self._rebuild_controller()
         if self.autodiscover:
             self._rediscover()
+        self._open_sink()
+
+    def _open_sink(self):
+        from src import persistence
+        self.sink = persistence.make_sink(self.mode, self.shadow, self.controller_name, self.policy_name, None,
+                                          k8s=self._k8s, entry=self.entry)
 
     def reset(self, scenario=None):
         self.step_i = 0
         self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
         self.guard.reset()
         self.controller.reset()
+        self.sink.close()                         # step numbers start again: a new run, so (run, step) stays unique
+        self._open_sink()
 
     # -- topology ---------------------------------------------------------
     def _rediscover(self):
@@ -315,6 +349,106 @@ class LiveEngine(BaseEngine):
                 print(f"[live] topology discovery added services: {added}")
         self.topology_source = "jaeger"
 
+    def _update_live_topology(self):
+        """Fold this window's traces into the live graph; services = reachable from the entry AND backed by a
+        readable Deployment (a traced service without one - a database, a sidecar - is external, not an error).
+        Returns the Kubernetes state of the services kept."""
+        lt = self.live_topology
+        lt.update(getattr(self._prom, "last_traces", []) or [])
+        candidates = lt.services()
+        traced = set(candidates)
+        if config.OBSERVE_UNTRACED and hasattr(self._k8s, "get_all_state"):
+            everything = self._k8s.get_all_state()
+            state = {s: v for s, v in everything.items() if s in traced or v["ready"] > 0}
+            candidates = candidates + sorted(s for s in state if s not in traced)       # untraced: isolated nodes
+        else:
+            state = self._k8s.get_state(candidates)
+        if self.entry not in state:
+            raise RuntimeError(f"entry service {self.entry} has no readable Deployment")
+        services = [s for s in candidates if s in state]
+        graph = lt.call_graph(services)
+        self.edge_calls = {f"{a}->{b}": round(c, 1) for (a, b), c in lt.observed_calls().items()
+                           if a in graph and b in dict(graph[a])}
+        if services != self.services or graph != self.call_graph:
+            added = [s for s in services if s not in self.services]
+            removed = [s for s in self.services if s not in services]
+            self.services, self.call_graph = services, graph
+            self.guard.services = services
+            self.guard.budget = config.live_budget(len(services))
+            self.builder.set_topology(services, self.entry, graph)
+            self._rebuild_controller()
+            if added or removed:
+                print(f"[live] topology changed: +{added} -{removed} ({len(services)} services)")
+        self.topology_source = "jaeger-live"
+        return {s: state[s] for s in services}
+
+    def _apply_cluster_safety(self, approved, reasons, metrics, prom):
+        """Real-cluster limits the per-service guard cannot know about (see config.NODE_MEMORY_RESERVE_MB)."""
+        if not config.ALLOW_RESIZE:
+            for svc, a in approved.items():
+                if a["cpu"] != metrics[svc]["cpu"] or a["mem"] != metrics[svc]["mem"]:
+                    a["cpu"], a["mem"] = metrics[svc]["cpu"], metrics[svc]["mem"]
+                    reasons.setdefault(svc, "resize disabled (ALLOW_RESIZE=0)")
+        ups = [s for s, a in approved.items() if a["dr"] > 0 and self._controlled(s)]
+        if not ups or not hasattr(self._prom, "node_memory_headroom_mb"):
+            return
+        try:
+            room = self._prom.node_memory_headroom_mb() - config.NODE_MEMORY_RESERVE_MB
+        except Exception as e:                       # cannot see the node -> do not add pods
+            room = -1.0
+            why = f"scale-up blocked: node memory unknown ({e})"
+        else:
+            why = None
+        for s in sorted(ups, key=lambda x: -metrics[x].get("utilization", 0.0)):     # busiest service first
+            need = approved[s]["dr"] * max(prom.get(s, {}).get("mem_mb", 0.0), 256.0)
+            if need <= room:
+                room -= need
+            else:
+                approved[s]["dr"] = 0
+                reasons[s] = why or f"scale-up blocked: node memory headroom ({max(room, 0):.0f} MiB left, need {need:.0f})"
+
+    def _critical_profile(self):
+        """CRISP-style critical shares of this window's real requests (overall, slow tail, per request type) - or None."""
+        traces = getattr(self._prom, "last_traces", None)
+        if not traces:
+            return None
+        try:
+            from src.topology_intel import crisp
+            reqs = crisp.requests_from_traces(traces, self.entry)
+            if not reqs:
+                return None
+            prof = crisp.CriticalProfile(reqs)
+            crit = list(dict.fromkeys(prof.critical_set(0.9) + prof.critical_set(0.9, "tail")))      # explains 90 % overall AND in the tail
+            self._last_critical = {"set": crit, "shares": prof.overall}
+            top = lambda t, n=8: {s: round(v, 3) for s, v in list(t.items())[:n]}
+            return {"requests": prof.n, "overall": top(prof.overall), "tail": top(prof.tail), "set": crit,
+                    "coverage": round(crisp.coverage(reqs, crit), 3),
+                    "types": [{"op": op, "n": prof.type_counts[op], "top": top(sh, 3)}
+                              for op, sh in sorted(prof.by_type.items(), key=lambda x: -prof.type_counts[x[0]])[:6]]}
+        except Exception:                        # an explanation must never break the control loop
+            return None
+
+    def _critical_path_evidence(self, obs):
+        """Checks the current critical path against the real requests of this window (needs OpenTelemetry traces)."""
+        traces = getattr(self._prom, "last_traces", None)
+        if not traces:
+            return None
+        try:
+            from src.evaluation.critical_path_eval import evidence
+            return evidence(traces, obs["critical_path"], self.entry, self.call_graph)
+        except Exception:                        # never let an explanation break the control loop
+            return None
+
+    def _topology_info(self):
+        lt = self.live_topology
+        n_edges = sum(len(t) for t in self.call_graph.values())
+        info = {"source": self.topology_source, "services": len(self.services), "edges": n_edges,
+                "controlled": sum(1 for s in self.services if self._controlled(s))}
+        if lt is not None:
+            info.update(updated_at=lt.updated_at, traces_in_window=lt.last_window_traces,
+                        half_life_s=lt.half_life_s, ttl_s=lt.ttl_s)
+        return info
+
     # -- stale hold --------------------------------------------------------
     def _hold(self, reason):
         """Payload for a tick where we refuse to act on missing data."""
@@ -342,19 +476,34 @@ class LiveEngine(BaseEngine):
                               self.guard.breaker_open)
             p["step"] = step
         p.update(stale=True, stale_reason=reason, metrics_age_s=age, shadow=self.shadow,
-                 topology_source=self.topology_source)
+                 topology_source=self.topology_source, topology=self._topology_info())
         return p
 
     # -- main tick ----------------------------------------------------------
     def tick(self):
+        """One control step, then (when a database is configured) its record. The sink only queues; it cannot fail the step."""
+        self._extras = {}
+        payload = self._tick()
+        self.sink.record_step(payload, self._extras)
+        return payload
+
+    def _tick(self):
         if self.autodiscover and self.step_i % REDISCOVER_EVERY_TICKS == 0:
             self._rediscover()
 
         try:
             prom = self._prom.collect()
-            k8s = self._k8s.get_state(self.services)
+            if self.live_topology is not None:
+                k8s = self._update_live_topology()
+            else:
+                k8s = self._k8s.get_state(self.services)
         except Exception as e:           # Prometheus down, kubeconfig missing, API unreachable
             return self._hold(f"cluster read failed: {e}")
+        if self.live_topology is not None and len(self.services) < 2:
+            return self._hold("discovering topology from traces - no cross-service calls seen yet")
+        ages = self._k8s.pod_ages() if hasattr(self._k8s, "pod_ages") else {}
+        for s_, v_ in k8s.items():
+            v_["youngest_pod_s"] = ages.get(s_)
         missing = [s for s in self.services if s not in k8s]
         if missing:
             return self._hold(f"cannot read deployment(s): {', '.join(missing)}")
@@ -363,8 +512,11 @@ class LiveEngine(BaseEngine):
         self._last_ok_ts = time.time()
 
         try:        # per-edge latency percentiles from traces (the EHG); optional
-            edges = self._jaeger.aggregate_window(self._jaeger.fetch_recent_traces(
-                self.entry, config.JAEGER_LOOKBACK_SECONDS, config.JAEGER_TRACE_LIMIT))
+            traces = getattr(self._prom, "last_traces", None)       # reuse the window the metrics source fetched
+            if not traces:
+                traces = self._jaeger.fetch_recent_traces(
+                    self.entry, config.JAEGER_LOOKBACK_SECONDS, config.JAEGER_TRACE_LIMIT)
+            edges = self._jaeger.aggregate_window(traces)
         except Exception:
             edges = {}
         metrics, e2e, cost = self.builder.build(prom, k8s, edges)
@@ -372,14 +524,23 @@ class LiveEngine(BaseEngine):
             if svc in metrics:
                 metrics[svc]["resize_cooldown"], metrics[svc]["scaledown_cooldown"] = rz, sd
         slo_ms = slo_for_live(self.call_graph, self.entry)
+        profile = self._critical_profile()
+        override = getattr(self, "_last_critical", None) if (config.CRITICAL_PATH_SOURCE == "crisp" and profile) else None
         obs = build_observation(self.services, self.call_graph, self.entry, metrics, e2e, cost,
-                                self.guard.budget, slo_ms)
+                                self.guard.budget, slo_ms, critical_override=override)
 
         self.guard.observe_slo(e2e["p95_ms"], slo_ms, self.step_i)
         proposals = self.controller.decide(obs, breaker_open=self.guard.breaker_open)
         approved, reasons = self.guard.filter(proposals, metrics, self.step_i,
                                               physical_only=_is_baseline(self.controller))
 
+        guard_approved = {svc: dict(a) for svc, a in approved.items()}        # what the guard let through, before the cluster-level vetoes
+        self._extras = {"guard_approved": {svc: g["dr"] for svc, g in guard_approved.items()}}
+        self._apply_cluster_safety(approved, reasons, metrics, prom)
+        for svc in list(approved):
+            if not self._controlled(svc):
+                approved[svc] = {"dr": 0, "cpu": metrics[svc]["cpu"], "mem": metrics[svc]["mem"]}
+                reasons[svc] = "observed only (not in CONTROLLED_SERVICES)"
         for svc, a in approved.items():
             if (a["dr"] or a["cpu"] != metrics[svc]["cpu"] or a["mem"] != metrics[svc]["mem"]) and not self.shadow:
                 try:
@@ -388,6 +549,9 @@ class LiveEngine(BaseEngine):
                     reasons[svc] = f"k8s error: {e}"
                     approved[svc] = {"dr": 0, "cpu": metrics[svc]["cpu"], "mem": metrics[svc]["mem"]}
 
+        for svc, g in guard_approved.items():                                   # the guard must not count actions that never happened
+            a = approved.get(svc, g)
+            self.guard.revoke(svc, scale=a["dr"] != g["dr"], resize=(a["cpu"], a["mem"]) != (g["cpu"], g["mem"]))
         _, pen = rewards.objective_penalties(metrics, self.services, e2e, cost, self.guard.budget, slo_ms)
         rps = metrics[self.entry]["requests"]
         self._push_history(e2e, cost, rps, slo_ms)
@@ -396,10 +560,47 @@ class LiveEngine(BaseEngine):
                                  "balance": pen["balance_penalty"]},
                                 rps, slo_ms, self.guard.budget, self.call_graph, self.entry,
                                 self.services, self.guard.breaker_open,
-                                topology_source=self.topology_source)
+                                topology_source=self.topology_source, topology=self._topology_info(),
+                                critical_path_evidence=self._critical_path_evidence(obs),
+                                critical_profile=profile,
+                                jaeger_url=config.JAEGER_PUBLIC_URL)
         self.step_i += 1
         self._last_payload = payload
         return payload
+
+
+class ReplayEngine(BaseEngine):
+    """Plays back payloads recorded from a real run (src/dashboard/record.py), in a loop. A safety net for a presentation:
+    if the cluster or the network is unavailable the control room still shows exactly what a real run looked like,
+    and says so (mode "replay", a banner on the page). It computes nothing and touches no cluster."""
+    mode = "replay"
+
+    def __init__(self, path, agent=None, policy_name=None, controller="mo_td3", w=config.DEFAULT_PREFERENCE, frames=None):
+        """path: JSONL recorded with src/dashboard/record.py - or `frames`: payloads already loaded (from the history database)."""
+        super().__init__(agent, policy_name, controller, w, shadow=True)
+        import json
+        if frames is None:
+            with open(path) as f:
+                frames = [json.loads(l) for l in f if l.strip()]
+        self.frames = [p for p in frames if p.get("nodes")]
+        if not self.frames:
+            raise ValueError(f"{path or 'the history database'}: no recorded payloads")
+        self.services = [n["id"] for n in self.frames[0]["nodes"]]
+        self.call_graph, self.entry = {}, self.frames[0]["nodes"][0]["id"]
+        self._rebuild_controller = lambda: None
+        self.controller = None
+
+    def reset(self, scenario=None):
+        self.step_i = 0
+
+    def set_controller(self, name):
+        pass                                                 # a recording cannot change its mind
+
+    def tick(self):
+        p = dict(self.frames[self.step_i % len(self.frames)])
+        p.update(step=self.step_i, mode="replay", replay=True, replay_length=len(self.frames), timestamp=time.time())
+        self.step_i += 1
+        return p
 
 
 def slo_for_live(call_graph, entry):
