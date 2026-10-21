@@ -60,7 +60,9 @@ class SafetyGuard:
     max_replicas: int = config.MAX_REPLICAS
 
     _last_scale_down_step: dict = field(default_factory=dict)
+    _last_scale_up_step: dict = field(default_factory=dict)
     _last_resize_step: dict = field(default_factory=dict)
+    _undo: dict = field(default_factory=dict)         # {svc: (down, up, resize) timestamps before the last filter()}
     _consecutive_violations: int = 0
     _breaker_open: bool = False
     _breaker_opened_at_step: int = -1
@@ -126,8 +128,18 @@ class SafetyGuard:
                 # 3. asymmetric scale-down --------------------------------------
                 if a["dr"] < 0:
                     since = step - self._last_scale_down_step.get(svc, -999)
+                    since_up = step - self._last_scale_up_step.get(svc, -999)
+                    youngest = cur.get("youngest_pod_s")           # from the cluster itself: survives an agent restart
+                    after_up = config.SCALE_DOWN_AFTER_UP_STEPS
+                    window_s = after_up * config.STEP_SECONDS
                     if since < config.SCALE_DOWN_COOLDOWN_STEPS:
                         notes.append(f"scale-down cooldown ({since} of {config.SCALE_DOWN_COOLDOWN_STEPS})")
+                        a["dr"] = 0
+                    elif after_up and since_up < after_up:
+                        notes.append(f"scale-down blocked after a scale-up ({since_up} of {after_up} steps)")
+                        a["dr"] = 0
+                    elif after_up and youngest is not None and youngest < window_s:
+                        notes.append(f"scale-down blocked: newest pod is only {youngest:.0f} s old (window {window_s:.0f} s)")
                         a["dr"] = 0
 
                 # 4. resize deadband + cooldown ----------------------------------
@@ -148,14 +160,36 @@ class SafetyGuard:
         # 5. cluster budget -------------------------------------------------------
         self._enforce_budget(approved, current, reasons)
 
-        # bookkeeping only for what actually goes through
+        # bookkeeping only for what actually goes through (a caller that vetoes an action afterwards calls revoke())
+        self._undo = {}
         for svc, a in approved.items():
             cur = current[svc]
+            self._undo[svc] = (self._last_scale_down_step.get(svc), self._last_scale_up_step.get(svc),
+                               self._last_resize_step.get(svc))
             if a["dr"] < 0:
                 self._last_scale_down_step[svc] = step
+            if a["dr"] > 0:
+                self._last_scale_up_step[svc] = step
             if a["cpu"] != cur["cpu"] or a["mem"] != cur["mem"]:
                 self._last_resize_step[svc] = step
         return approved, reasons
+
+    def revoke(self, svc: str, scale: bool = False, resize: bool = False):
+        """Undo the bookkeeping of the last filter() for `svc`: the action the guard approved was vetoed by the caller (node
+        memory, a service whitelist, a failed API call), so no cooldown or stabilisation window may start from it."""
+        prev = self._undo.get(svc)
+        if prev is None:
+            return
+        def put(table, value):
+            if value is None:
+                table.pop(svc, None)
+            else:
+                table[svc] = value
+        if scale:
+            put(self._last_scale_down_step, prev[0])
+            put(self._last_scale_up_step, prev[1])
+        if resize:
+            put(self._last_resize_step, prev[2])
 
     # ------------------------------------------------------------------
     def readiness(self, step: int) -> dict:
@@ -165,8 +199,11 @@ class SafetyGuard:
         for svc in self.services:
             since_r = step - self._last_resize_step.get(svc, -999)
             since_d = step - self._last_scale_down_step.get(svc, -999)
+            if config.SCALE_DOWN_AFTER_UP_STEPS:
+                since_d = min(since_d, step - self._last_scale_up_step.get(svc, -999))
+            window = max(config.SCALE_DOWN_COOLDOWN_STEPS, config.SCALE_DOWN_AFTER_UP_STEPS)       # the longest rule that can block
             out[svc] = (max(0.0, (config.RESIZE_COOLDOWN_STEPS - since_r) / config.RESIZE_COOLDOWN_STEPS),
-                        max(0.0, (config.SCALE_DOWN_COOLDOWN_STEPS - since_d) / config.SCALE_DOWN_COOLDOWN_STEPS))
+                        max(0.0, (window - since_d) / window))
         return out
 
     def total_cost(self, state: dict) -> float:
@@ -197,7 +234,9 @@ class SafetyGuard:
                     f"blocked: would exceed cluster budget ({self.budget:.1f} cores-eq)"
 
     def reset(self):
+        self._undo = {}
         self._last_scale_down_step.clear()
+        self._last_scale_up_step.clear()
         self._last_resize_step.clear()
         self._consecutive_violations = 0
         self._breaker_open = False

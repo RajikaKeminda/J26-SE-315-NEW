@@ -215,11 +215,14 @@ class Simulator:
         return {s: st.replicas for s, st in self.state.items()}
 
     def reset(self, replicas=None, cpu=None, mem=None):
-        """Fresh cluster at the manifest's initial allocation (overridable per controller)."""
-        self.state = {s: ServiceState(
-            replicas=replicas or config.INITIAL_REPLICAS,
-            cpu=cpu or config.CPU_DEFAULT,
-            mem=float(mem or config.MEM_DEFAULT_MB)) for s in self.services}
+        """Fresh cluster at the manifest's initial allocation (overridable per controller; replicas / cpu / mem may be a
+        number for every service or a {service: value} dict)."""
+        def per(v, default, svc):
+            return v.get(svc, default) if isinstance(v, dict) else (v or default)
+        self.state = {s2: ServiceState(
+            replicas=per(replicas, config.INITIAL_REPLICAS, s2),
+            cpu=per(cpu, config.CPU_DEFAULT, s2),
+            mem=float(per(mem, config.MEM_DEFAULT_MB, s2))) for s2 in self.services}
         self.prev_rps = {s: 0.0 for s in self.services}
 
     # -- actions ------------------------------------------------------------

@@ -25,6 +25,9 @@ HTTP API
     GET  /api/pareto                 preference-sweep Pareto front
     GET  /api/calibration            simulator-vs-real-cluster fit report
     GET  /api/training               learning curves of the trained arms
+    GET  /api/clusters               monitored clusters stored in the history database (names only)
+    GET  /api/history/{what}         steps | metrics | actions | violations | critical-path | topology | events | summary | runs
+                                     of ONE cluster (?cluster=<name or id>, default: the one being controlled; ?hours=24, ?service=, ?limit=)
     POST /api/pause | /api/resume    pause / resume the control loop
     POST /api/reset                  restart the episode (demo) / counters (live)
     POST /api/scenario/{name}        demo only: burst | diurnal | rampup | normal | random
@@ -41,7 +44,7 @@ import os
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -98,6 +101,8 @@ async def lifespan(app):
         yield
     finally:
         task.cancel()
+        if STATE["engine"] is not None:
+            await asyncio.to_thread(STATE["engine"].close)         # flushes the history to the database
 
 
 app = FastAPI(title="Topology-Aware Autoscaler — Control Room", lifespan=lifespan)
@@ -129,6 +134,7 @@ async def state():
         "shadow": bool(getattr(eng, "shadow", False)),
         "step": getattr(eng, "step_i", 0),
         "error": STATE["error"],
+        "persistence": eng.persistence_status() if hasattr(eng, "persistence_status") else {"enabled": False, "state": "off"},
     }
 
 
@@ -165,6 +171,73 @@ async def training():
             blob = json.load(f)
         curves[os.path.splitext(os.path.basename(path))[0]] = blob.get("history", [])
     return {"available": bool(curves), "results": curves}
+
+
+# ---------------------------------------------------------------------------
+# History (PostgreSQL, src/persistence). Sync handlers: FastAPI runs them in its thread pool, so a slow query never blocks the event loop.
+# ---------------------------------------------------------------------------
+def _history_conn():
+    if not config.DATABASE_URL:
+        raise HTTPException(503, "history is off: set AUTOSCALER_DATABASE_URL (see docs/PERSISTENCE.md)")
+    from src.persistence import db
+    try:
+        return db.connect(config.DATABASE_URL, autocommit=True)
+    except Exception as e:
+        raise HTTPException(503, f"history database unreachable: {type(e).__name__}") from e
+
+
+def _has_schema(conn):
+    """False on a database the agent has not initialised yet (it creates the tables on its first start)."""
+    return conn.execute("SELECT to_regclass('clusters') IS NOT NULL").fetchone()[0]
+
+
+def _current_cluster_id():
+    eng = STATE["engine"]
+    w = getattr(getattr(eng, "sink", None), "writer", None)
+    return str(w.cluster_id) if w is not None and w.cluster_id else None
+
+
+@app.get("/api/clusters")
+def clusters():
+    from src.persistence import queries
+    with _history_conn() as conn:
+        return {"current": _current_cluster_id(), "clusters": queries.clusters(conn) if _has_schema(conn) else []}
+
+
+@app.get("/api/history/{what}")
+def history(what: str, cluster: str | None = None, hours: float = Query(24.0, gt=0, le=24 * 400), service: str | None = None,
+            outcome: str | None = None, changed_only: bool = False, limit: int = Query(2000, ge=1, le=20000)):
+    from datetime import datetime, timedelta, timezone
+    from src.persistence import queries
+    kinds = ["steps", "metrics", "actions", "violations", "critical-path", "topology", "events", "summary", "runs"]
+    if what not in kinds:
+        raise HTTPException(404, f"unknown history {what!r}; choose from {kinds}")
+    with _history_conn() as conn:
+        cid = (queries.resolve_cluster(conn, cluster) if _has_schema(conn) else None) if cluster else _current_cluster_id()
+        if not cid:
+            raise HTTPException(404, "no such cluster (or none is being controlled): pick one from /api/clusters")
+        until = datetime.now(timezone.utc)
+        since = until - timedelta(hours=hours)
+        args = (conn, cid, since, until)
+        if what == "steps":
+            data = queries.steps(*args, limit=limit)
+        elif what == "metrics":
+            data = queries.metrics(*args, service=service, limit=limit)
+        elif what == "actions":
+            data = queries.actions(*args, service=service, outcome=outcome, limit=limit)
+        elif what == "violations":
+            data = queries.violations(*args, limit=limit)
+        elif what == "critical-path":
+            data = queries.critical_paths(*args, changed_only=changed_only, limit=limit)
+        elif what == "topology":
+            data = queries.topology(*args, limit=limit)
+        elif what == "events":
+            data = queries.events(*args, limit=limit)
+        elif what == "runs":
+            data = queries.runs(conn, cid, limit)
+        else:
+            data = queries.summary(*args)
+    return {"cluster": cid, "hours": hours, "data": data}
 
 
 @app.post("/api/pause")
@@ -247,7 +320,7 @@ async def ws(websocket: WebSocket):
 # Startup
 # ---------------------------------------------------------------------------
 def configure(mode="demo", shadow=False, arm=None, scenario="burst", interval=None, seed=None,
-              controller="mo_td3", preference=config.DEFAULT_PREFERENCE):
+              controller="mo_td3", preference=config.DEFAULT_PREFERENCE, replay=None, replay_frames=None):
     """Builds the engine and stores it in STATE (used by main() and tests)."""
     agent, name = load_agent(arm)
     STATE.update(mode=mode, paused=False, latest=None, error=None, scenario=scenario,
@@ -256,6 +329,10 @@ def configure(mode="demo", shadow=False, arm=None, scenario="burst", interval=No
         STATE["engine"] = DemoEngine(agent, name, scenario=scenario, seed=seed,
                                      controller=controller, w=preference)
         STATE["interval"] = 1.0 if interval is None else interval
+    elif mode == "replay":
+        from src.inference.engines import ReplayEngine
+        STATE["engine"] = ReplayEngine(replay, agent, name, frames=replay_frames)
+        STATE["interval"] = 2.0 if interval is None else interval
     else:
         STATE["engine"] = LiveEngine(agent, name, shadow=shadow, controller=controller, w=preference)
         STATE["interval"] = float(config.POLL_INTERVAL_SECONDS if interval is None else interval)
@@ -264,7 +341,11 @@ def configure(mode="demo", shadow=False, arm=None, scenario="burst", interval=No
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["demo", "live"], default="demo")
+    ap.add_argument("--mode", choices=["demo", "live", "replay"], default="demo")
+    ap.add_argument("--replay", default=None, help="replay mode: JSONL recorded with src/dashboard/record.py")
+    ap.add_argument("--replay-db", default=None, metavar="CLUSTER",
+                    help="replay mode: play back the frames stored in the history database for this cluster (AUTOSCALER_STORE_FRAMES=1)")
+    ap.add_argument("--replay-hours", type=float, default=24.0, help="with --replay-db: how far back")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--shadow", action="store_true",
@@ -278,9 +359,15 @@ def main():
     ap.add_argument("--scenario", choices=SCENARIOS, default="burst", help="demo traffic")
     ap.add_argument("--interval", type=float, default=None, help="seconds between ticks")
     args = ap.parse_args()
+    if args.mode == "replay" and not (args.replay or args.replay_db):
+        ap.error("--mode replay needs --replay FILE (record one with python -m src.dashboard.record) or --replay-db CLUSTER")
+    frames = None
+    if args.mode == "replay" and args.replay_db:
+        from src.persistence.replay import load_frames
+        frames = load_frames(args.replay_db, args.replay_hours)
 
     configure(args.mode, args.shadow, args.arm, args.scenario, args.interval,
-              controller=args.controller, preference=args.preference)
+              controller=args.controller, preference=args.preference, replay=args.replay, replay_frames=frames)
 
     import uvicorn
     print(f"[server] {args.mode} mode{' (shadow)' if args.shadow else ''} "

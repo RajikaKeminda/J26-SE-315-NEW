@@ -94,6 +94,7 @@ class HParams:
     gamma: float = config.TD3_GAMMA
     policy_delay: int = config.TD3_POLICY_DELAY
     grad_clip: float = 5.0
+    randomize_initial: bool = False     # start every service at its own CPU limit (domain randomisation)
 
 
 def sample_preference(rng, fixed_w=None, default_prob=0.3):
@@ -140,17 +141,23 @@ def collect_demonstrations(replay, n_episodes, seed, rng, hp=None):
         replay.add_episode(obs_list, idx_list, cont_list, rew, w=config.DEFAULT_PREFERENCE, demo=True)
 
 
-def validate(agent, w, n_episodes=16, seed0=50_000):
-    """Deterministic policy (the smoothed target actor) on fixed held-out scenarios."""
-    ctrl_factory = lambda: RLController(agent, DEMO6.services, w=w, fallback=False)
+def validate(agent, w, n_episodes=16, seed0=50_000, topologies=None):
+    """Deterministic policy (the smoothed target actor) on fixed held-out scenarios: the deployed 6-service topology,
+    or - for fine-tuning on other targets - the mean over several `topologies`."""
+    topos = topologies or [DEMO6]
+    per = max(2, n_episodes // len(topos))
     agent.use_target_for_act = True
     try:
-        return evaluate_controller(ctrl_factory, DEMO6, n_episodes=n_episodes, w=w, seed0=seed0)
+        runs = [evaluate_controller(lambda t=t: RLController(agent, t.services, w=w, fallback=False), t,
+                                    n_episodes=per, w=w, seed0=seed0 + 17 * i) for i, t in enumerate(topos)]
     finally:
         agent.use_target_for_act = False
+    if len(runs) == 1:
+        return runs[0]
+    return {k: float(np.mean([r[k] for r in runs])) for k in ("scalarized", "p95_latency", "mean_cost", "slo_violation_rate")}
 
 
-def select_checkpoint(agent, candidates, w, n_episodes, seed0=60_000):
+def select_checkpoint(agent, candidates, w, n_episodes, seed0=60_000, topologies=None):
     """Picking the single best of ~24 noisy validations over-fits those 16 scenarios (the winner's
     score is partly luck). Re-score the top candidates on a fresh, larger scenario set and take the
     best of THOSE. Returns (state, fresh_score)."""
@@ -159,7 +166,7 @@ def select_checkpoint(agent, candidates, w, n_episodes, seed0=60_000):
     try:
         for state in candidates:
             agent.actor_t.load_state_dict(state["actor"])
-            score = validate(agent, w, n_episodes, seed0)["scalarized"]
+            score = validate(agent, w, n_episodes, seed0, topologies)["scalarized"]
             if score < best[1]:
                 best = (state, score)
     finally:
@@ -168,7 +175,11 @@ def select_checkpoint(agent, candidates, w, n_episodes, seed0=60_000):
 
 
 def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, warmup_episodes=30,
-                updates_per_episode=30, batch_size=None, val_every=50, verbose=True, log=print, hp=None):
+                updates_per_episode=30, batch_size=None, val_every=50, verbose=True, log=print, hp=None,
+                init_from=None, sizes=(4, 12), target_topologies=None, target_prob=0.0, val_topologies=None):
+    """`init_from`: warm-start from a checkpoint (fine-tuning). `sizes`: service-count range of the random training
+    topologies. `target_topologies` (with probability `target_prob` per episode) are mixed into training, and
+    `val_topologies` replace the 6-service demo as the validation set - together they specialise a trained agent."""
     hp = hp or HParams()
     opts = ARMS[arm]
     batch_size = batch_size or hp.batch_size
@@ -182,9 +193,15 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
         g["lr"] = hp.actor_lr
     for g in agent.critic_opt.param_groups:
         g["lr"] = hp.critic_lr
+    if init_from:
+        agent.warm_start(init_from)
+        if verbose:
+            log(f"  warm start from {init_from}")
     saved_cfg = (config.TD3_TAU, config.TD3_POLICY_DELAY)      # restored on return
     config.TD3_TAU, config.TD3_POLICY_DELAY = hp.tau, hp.policy_delay
     env = AutoscalerEnv(topology=None, seed=seed, replica_only=opts["replica_only"])
+    env.topology_sizes = tuple(sizes)
+    env.randomize_initial = hp.randomize_initial
     replay = EpisodeReplay(config.TD3_REPLAY_EPISODES, seed=seed)
     if opts["demos"] and demo_episodes:
         collect_demonstrations(replay, demo_episodes, seed, rng, hp)
@@ -210,6 +227,8 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
             return decode_action(env_.services, obs["metrics"], idx, cont, opts["replica_only"])
 
         topo = DEMO6 if rng.random() < hp.fixed_topology_prob else None
+        if target_topologies and rng.random() < target_prob:
+            topo = target_topologies[int(rng.integers(len(target_topologies)))]
         obs_list, idx_list, cont_list, rew = run_collect(env, policy_fn, topology=topo)
         replay.add_episode(obs_list, idx_list, cont_list, rew, w=w, demo=False)
 
@@ -225,7 +244,7 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
                 last_info = agent.update(batch, bc_weight=bc_w)
 
         if (ep + 1) % val_every == 0 or ep == episodes - 1:
-            v = validate(agent, eval_w, hp.val_episodes)
+            v = validate(agent, eval_w, hp.val_episodes, topologies=val_topologies)
             entry = {"episode": ep + 1, "val_scalarized": v["scalarized"], "val_p95_ms": v["p95_latency"],
                      "val_cost": v["mean_cost"], "val_slo_violation": v["slo_violation_rate"],
                      "seconds": round(time.time() - t0, 1), **{k: round(x, 4) for k, x in last_info.items()}}
@@ -241,12 +260,13 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
 
     fresh = None
     if kept:
-        best_state, fresh = select_checkpoint(agent, [st for _, st in kept], eval_w, hp.final_val_episodes)
+        best_state, fresh = select_checkpoint(agent, [st for _, st in kept], eval_w, hp.final_val_episodes, topologies=val_topologies)
         if verbose:
             log(f"  checkpoint selection: top-{len(kept)} by validation re-scored on {hp.final_val_episodes} fresh "
                 f"episodes -> best fresh score {fresh:.3f}")
     config.TD3_TAU, config.TD3_POLICY_DELAY = saved_cfg
     meta = {"arm": arm, "seed": seed, "episodes": episodes, "history": history,
             "best_val_scalarized": best, "selected_fresh_val_scalarized": fresh, "eval_preference": [round(float(x), 6) for x in eval_w],
-            "topology_training": "random 4-12 services, 2-5 tiers"}
+            "topology_training": f"random {sizes[0]}-{sizes[1]} services, 2-5 tiers" + (f" + {len(target_topologies)} target topologies p={target_prob}" if target_topologies else ""),
+            "init_from": init_from}
     return agent, best_state, meta

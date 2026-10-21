@@ -28,19 +28,47 @@ from src import config
 from src.simulation.simulator import critical_path as find_critical_path
 
 
-def fetch_recent_traces(service: str, lookback_seconds: int, limit: int) -> list[dict]:
-    """Pulls the most recent traces for `service` from the real Jaeger backend."""
-    end_us = int(time.time() * 1_000_000)
+_SKEW = {"value": 0.0, "at": 0.0}
+
+
+def clock_skew_s(max_age_s: float = 60.0) -> float:
+    """Server clock minus this machine's clock, from the HTTP Date header of the Jaeger server (1 s
+    resolution, corrected for its truncation). The services that produce spans live next to Jaeger, so their
+    timestamps share its clock. Needed when the controller runs on a different machine than the cluster: a
+    "last 60 s" window computed from the local clock would otherwise miss recent traces (or include none)."""
+    now = time.time()
+    if now - _SKEW["at"] < max_age_s:
+        return _SKEW["value"]
+    try:
+        from email.utils import parsedate_to_datetime
+        t0 = time.time()
+        r = requests.get(f"{config.JAEGER_QUERY_URL}/api/services", timeout=config.JAEGER_TIMEOUT_SECONDS)
+        t1 = time.time()
+        server = parsedate_to_datetime(r.headers["Date"]).timestamp() + 0.5
+        _SKEW["value"] = max(-600.0, min(600.0, server - (t0 + t1) / 2))
+        _SKEW["at"] = now
+    except Exception:                       # keep the previous estimate; retry on the next call
+        _SKEW["at"] = now - max_age_s + 5.0
+    return _SKEW["value"]
+
+
+def fetch_recent_traces(service: str, lookback_seconds: int, limit: int, strict: bool = False) -> list[dict]:
+    """Pulls the most recent traces for `service` from the real Jaeger backend. With strict=True a failed
+    query raises QueryFailed (the caller must not read it as "no traffic"); otherwise it returns []."""
+    end_us = int((time.time() + clock_skew_s()) * 1_000_000)      # in the Jaeger server's clock
     start_us = end_us - lookback_seconds * 1_000_000
     try:
         resp = requests.get(
             f"{config.JAEGER_QUERY_URL}/api/traces",
             params={"service": service, "start": start_us, "end": end_us, "limit": limit},
-            timeout=5,
+            timeout=config.JAEGER_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
         return resp.json().get("data", [])
-    except requests.RequestException as e:
+    except (requests.RequestException, ValueError) as e:
+        if strict:
+            from src.data_collection.prometheus_client import QueryFailed
+            raise QueryFailed(f"jaeger: {e}") from e
         print(f"[jaeger_client] failed to fetch traces: {e}")
         return []
 

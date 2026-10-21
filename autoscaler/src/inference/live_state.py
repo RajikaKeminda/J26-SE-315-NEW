@@ -32,6 +32,7 @@ class LiveStateBuilder:
     poison the estimate for the rest of the run."""
 
     WORK_BAND = (0.6, 1.8)
+    UNKNOWN_BAND = (0.1, 12.0)
 
     def __init__(self, services, entry, call_graph, ema=0.3, priors=None):
         self.services, self.entry, self.call_graph = list(services), entry, call_graph
@@ -58,12 +59,14 @@ class LiveStateBuilder:
             rps = m.get("requests", 0.0)
 
             # online estimate of the CPU cost of one request: only from a steady, unsaturated window
+            known = s in self.priors
             prior = self.priors.get(s, config.WORK_MS)
             raw_util = m.get("cpu_cores", 0.0) / max(ready * k["cpu"], 1e-6)
             steady = (rps >= 3.0 and raw_util < 0.85 and k["ready"] == k["replicas"] and k["ready"] > 0)
             if steady:
                 w = (m["cpu_cores"] - p.idle_cores * ready) / rps * 1000.0 - p.cpu_overhead_ms
-                lo, hi = self.WORK_BAND[0] * prior, self.WORK_BAND[1] * prior
+                band = self.WORK_BAND if known else self.UNKNOWN_BAND      # no measurement of this app yet: trust the data
+                lo, hi = band[0] * prior, band[1] * prior
                 if lo <= w <= hi:
                     self.work_est[s] += self.ema * (w - self.work_est[s])
             else:                                                       # drift back toward the declared cost
@@ -96,6 +99,7 @@ class LiveStateBuilder:
                 "work_ms": work,
                 "error_rate": m.get("error_rate", 0.0),
                 "backlog": 0.0,
+                "youngest_pod_s": k.get("youngest_pod_s"),
                 "latency_incl_ms": incl,
                 "latency_incl_p95_ms": max(incl_p95, incl),
             }

@@ -1,0 +1,502 @@
+{
+ "meta": {
+  "date": "2026-10-11",
+  "load": "ts-load.py, 3 users, think 1.0, 900 s (22:52:33-23:07:48) with the FIXED date handling, so the booking scenarios ran (5.6 req/s, 5061 HTTP calls, 0 errors)",
+  "staged_bottleneck": "ts-order-service CPU limit 300m",
+  "agent": "mo_td3_trainticket_cap6 (replica-only), act mode restricted to ts-order-service, max 2 replicas, SLO 1400 ms, node-memory reserve 600 MiB, stabilisation window 10 steps after a scale-up",
+  "client_endpoint_latency_ms_p50_p95": {
+   "preserve": [
+    1661,
+    3043
+   ],
+   "preserveOther": [
+    984,
+    1923
+   ],
+   "order_refresh": [
+    597,
+    1563
+   ],
+   "orderOther_refresh": [
+    167,
+    332
+   ],
+   "travel_trips_left": [
+    161,
+    413
+   ],
+   "travel2_trips_left": [
+    117,
+    221
+   ],
+   "cancel": [
+    149,
+    291
+   ],
+   "inside_payment": [
+    129,
+    284
+   ],
+   "foods": [
+    83,
+    134
+   ],
+   "execute_collected": [
+    95,
+    272
+   ],
+   "execute_execute": [
+    64,
+    129
+   ],
+   "rebook": [
+    65,
+    133
+   ],
+   "consigns": [
+    75,
+    150
+   ],
+   "assurances": [
+    52,
+    65
+   ],
+   "contacts": [
+    52,
+    69
+   ],
+   "verifycode": [
+    17,
+    65
+   ],
+   "login": [
+    161,
+    304
+   ]
+  },
+  "node": {
+   "load1": "1.8-42.3",
+   "memory_psi_some_avg10_pct": "0-21.7",
+   "mem_available_mb": "554-865",
+   "restarts": "only kube-system/storage-provisioner (ignored chronic flapper)"
+  },
+  "events": [
+   "one node stall of about a minute at 23:02-23:03 (like calibration run 3, cause unknown); the agent held for one step because Prometheus timed out (15 s), then resumed",
+   "the circuit breaker opened at step 4 (p95 2283 ms > SLO 1400 ms for 5 steps, one saturated pod) and closed at step 10 once the second pod was Ready",
+   "the agent was restarted once at the start of the run to lower the node-memory reserve from 768 to 600 MiB (a scale-up had been blocked by 21 MiB)"
+  ]
+ },
+ "effect_of_a_second_order_pod": {
+  "one pod, CPU saturated": {
+   "steps": 5,
+   "order_util_median": 1.0,
+   "order_own_p95_median_ms": 1191,
+   "e2e_p95_median_ms": 1920
+  },
+  "two pods Ready": {
+   "steps": 17,
+   "order_util_median": 0.59,
+   "order_own_p95_median_ms": 824,
+   "e2e_p95_median_ms": 1346
+  }
+ },
+ "rows": [
+  {
+   "time": "22:53:54",
+   "step": 0,
+   "rps": 4.7,
+   "e2e_p95_ms": 2338.1,
+   "breaker_open": false,
+   "order_replicas": 1,
+   "order_ready": 1,
+   "order_util": 0.68,
+   "order_own_p95_ms": 1206.8,
+   "proposed": 1,
+   "applied": 1,
+   "guard": null
+  },
+  {
+   "time": "22:54:25",
+   "step": 1,
+   "rps": 5.7,
+   "e2e_p95_ms": 1850.5,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 1,
+   "order_util": 0.739,
+   "order_own_p95_ms": 1188.6,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:54:57",
+   "step": 2,
+   "rps": 5.0,
+   "e2e_p95_ms": 1834.2,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 1,
+   "order_util": 0.894,
+   "order_own_p95_ms": 1103.6,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:55:28",
+   "step": 3,
+   "rps": 5.4,
+   "e2e_p95_ms": 1641.9,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 1,
+   "order_util": 1.0,
+   "order_own_p95_ms": 1104.4,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:55:59",
+   "step": 4,
+   "rps": 5.3,
+   "e2e_p95_ms": 2282.8,
+   "breaker_open": true,
+   "order_replicas": 2,
+   "order_ready": 1,
+   "order_util": 1.0,
+   "order_own_p95_ms": 1198.8,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:56:31",
+   "step": 5,
+   "rps": 5.2,
+   "e2e_p95_ms": 1963.2,
+   "breaker_open": true,
+   "order_replicas": 2,
+   "order_ready": 1,
+   "order_util": 1.0,
+   "order_own_p95_ms": 1139.1,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:57:03",
+   "step": 6,
+   "rps": 5.0,
+   "e2e_p95_ms": 1920.5,
+   "breaker_open": true,
+   "order_replicas": 2,
+   "order_ready": 1,
+   "order_util": 1.0,
+   "order_own_p95_ms": 1308.2,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:57:34",
+   "step": 7,
+   "rps": 5.2,
+   "e2e_p95_ms": 1901.3,
+   "breaker_open": true,
+   "order_replicas": 2,
+   "order_ready": 1,
+   "order_util": 1.0,
+   "order_own_p95_ms": 1191.2,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:58:06",
+   "step": 8,
+   "rps": 5.0,
+   "e2e_p95_ms": 1967.2,
+   "breaker_open": true,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.903,
+   "order_own_p95_ms": 1730.3,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:58:38",
+   "step": 9,
+   "rps": 5.5,
+   "e2e_p95_ms": 1683.8,
+   "breaker_open": true,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.816,
+   "order_own_p95_ms": 820.5,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "22:59:10",
+   "step": 10,
+   "rps": 6.4,
+   "e2e_p95_ms": 1250.8,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.676,
+   "order_own_p95_ms": 800.2,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "22:59:43",
+   "step": 11,
+   "rps": 6.7,
+   "e2e_p95_ms": 1399.3,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.57,
+   "order_own_p95_ms": 821.7,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:00:15",
+   "step": 12,
+   "rps": 6.6,
+   "e2e_p95_ms": 1318.5,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.566,
+   "order_own_p95_ms": 781.2,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:00:47",
+   "step": 13,
+   "rps": 6.7,
+   "e2e_p95_ms": 1275.9,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.588,
+   "order_own_p95_ms": 721.1,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:01:18",
+   "step": 14,
+   "rps": 6.4,
+   "e2e_p95_ms": 1366.7,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.609,
+   "order_own_p95_ms": 711.4,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "23:02:03",
+   "step": 15,
+   "hold": "cluster read failed: 'sum by (service) (label_replace(rate(container_cpu_usage_seconds_total{namespace=\"default\",pod!=\"\",container=\"\"}[120s]"
+  },
+  {
+   "time": "23:02:35",
+   "step": 16,
+   "rps": 2.8,
+   "e2e_p95_ms": 2436.7,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.375,
+   "order_own_p95_ms": 1186.1,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "23:03:07",
+   "step": 17,
+   "rps": 5.0,
+   "e2e_p95_ms": 1492.3,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.365,
+   "order_own_p95_ms": 908.9,
+   "proposed": 2,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:03:39",
+   "step": 18,
+   "rps": 5.5,
+   "e2e_p95_ms": 1956.5,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.412,
+   "order_own_p95_ms": 911.1,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:04:11",
+   "step": 19,
+   "rps": 6.0,
+   "e2e_p95_ms": 1504.1,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.576,
+   "order_own_p95_ms": 823.5,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:04:43",
+   "step": 20,
+   "rps": 6.7,
+   "e2e_p95_ms": 1346.3,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.594,
+   "order_own_p95_ms": 878.9,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:05:14",
+   "step": 21,
+   "rps": 6.8,
+   "e2e_p95_ms": 1184.6,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.586,
+   "order_own_p95_ms": 663.0,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:05:46",
+   "step": 22,
+   "rps": 6.2,
+   "e2e_p95_ms": 1273.9,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.579,
+   "order_own_p95_ms": 877.3,
+   "proposed": 0,
+   "applied": 0,
+   "guard": null
+  },
+  {
+   "time": "23:06:18",
+   "step": 23,
+   "rps": 6.0,
+   "e2e_p95_ms": 1434.7,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.582,
+   "order_own_p95_ms": 901.8,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:06:51",
+   "step": 24,
+   "rps": 6.2,
+   "e2e_p95_ms": 1287.7,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.59,
+   "order_own_p95_ms": 872.1,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:07:23",
+   "step": 25,
+   "rps": 6.4,
+   "e2e_p95_ms": 1256.7,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.6,
+   "order_own_p95_ms": 808.5,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:07:54",
+   "step": 26,
+   "rps": 6.2,
+   "e2e_p95_ms": 1277.5,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.501,
+   "order_own_p95_ms": 840.9,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:08:26",
+   "step": 27,
+   "rps": 1.0,
+   "e2e_p95_ms": 812.5,
+   "breaker_open": false,
+   "order_replicas": 2,
+   "order_ready": 2,
+   "order_util": 0.413,
+   "order_own_p95_ms": 455.9,
+   "proposed": -2,
+   "applied": -1,
+   "guard": "clamped replicas to [1,2]"
+  },
+  {
+   "time": "23:08:57",
+   "step": 28,
+   "rps": 0.0,
+   "e2e_p95_ms": 34.4,
+   "breaker_open": false,
+   "order_replicas": 1,
+   "order_ready": 1,
+   "order_util": 0.244,
+   "order_own_p95_ms": 451.5,
+   "proposed": 1,
+   "applied": 0,
+   "guard": "scale-up blocked: node memory headroom (335 MiB left, need 409)"
+  }
+ ]
+}

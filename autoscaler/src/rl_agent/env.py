@@ -30,6 +30,7 @@ from src.simulation import service_model as sm
 from src.simulation.simulator import (
     Simulator, budget_for, generate_traffic, random_topology)
 from src.topologies import DEMO6, Topology
+from src.topology_intel.critical_path import path_distribution
 from src.topology_intel.graph_builder import build_observation
 
 
@@ -104,6 +105,8 @@ class AutoscalerEnv:
                  use_guard=True, replica_only=False, episode_length=None):
         self.rng = np.random.default_rng(seed)
         self.fixed_topology = topology            # None -> a random topology every episode
+        self.topology_sizes = (4, 12)             # range of the random topologies (training can widen it)
+        self.randomize_initial = False             # training: start each service at a different CPU limit (heterogeneous cluster)
         self.obs_noise = obs_noise
         self.use_guard = use_guard
         self.replica_only = replica_only
@@ -115,12 +118,19 @@ class AutoscalerEnv:
 
     # ------------------------------------------------------------------
     def reset(self, pattern="random", topology: Topology | None = None, traffic=None, initial=None):
-        topo = topology or self.fixed_topology or random_topology(self.rng)
+        topo = topology or self.fixed_topology or random_topology(self.rng, *self.topology_sizes)
         self.topology = topo
         self.services, self.entry, self.call_graph = list(topo.services), topo.entry, topo.call_graph
         self.sim = Simulator(topo, rng=self.rng, obs_noise=self.obs_noise)
         if initial:
             self.sim.reset(**initial)
+        elif self.randomize_initial and self.rng.random() < 0.7:
+            # Real clusters are not uniform (one service has a tight limit, another a generous one): a policy that has only
+            # ever seen identical limits cannot be expected to cope. Levels span the allowed CPU range.
+            levels = np.array(sorted({round(config.CPU_MAX * f / config.CPU_QUANTUM) * config.CPU_QUANTUM
+                                      for f in (0.3, 0.5, 0.75, 1.0)}))
+            levels = np.clip(levels, config.CPU_MIN, config.CPU_MAX)
+            self.sim.reset(cpu={s2: float(self.rng.choice(levels)) for s2 in self.services})
         self.slo_ms, self.budget = self.sim.slo_ms, self.sim.budget
         self.guard = SafetyGuard(services=self.services, budget=self.budget)
         self.t = 0
@@ -139,8 +149,15 @@ class AutoscalerEnv:
         metrics = {s: dict(self._metrics[s], resize_cooldown=ready[s][0], scaledown_cooldown=ready[s][1])
                    for s in self.services}
         cost = self.sim.cost()
+        override = None
+        if config.CRITICAL_PATH_SOURCE == "crisp":        # opt-in: the measured-critical-share inputs (see topology_intel/crisp.py)
+            from src.topology_intel import crisp
+            if getattr(self, "_chains_for", None) is not self.topology:
+                self._chains, self._chains_for = path_distribution(self.call_graph, self.entry, max_paths=256), self.topology
+            prof = crisp.expected_critical_profile(self._chains, {s: metrics[s]["latency_ms"] for s in self.services})
+            override = {"set": prof["set"], "shares": prof["shares"]}
         obs = build_observation(self.services, self.call_graph, self.entry, metrics, e2e,
-                                cost, self.budget, self.slo_ms)
+                                cost, self.budget, self.slo_ms, critical_override=override)
         obs.update(metrics=metrics, e2e=e2e, cost=cost, external_rps=float(self.traffic[min(self.t, len(self.traffic) - 1)]))
         self._observe_cached = obs
         return obs

@@ -1,0 +1,159 @@
+{
+  "arm": "mo_td3_full",
+  "seed": 21,
+  "episodes": 500,
+  "history": [
+    {
+      "episode": 50,
+      "val_scalarized": 0.26734534092247486,
+      "val_p95_ms": 267.9802369390436,
+      "val_cost": 11.03555859375,
+      "val_slo_violation": 0.065625,
+      "seconds": 39.5,
+      "critic_loss": 0.0838,
+      "q_mean": -5.3158,
+      "actor_loss": 4.4486
+    },
+    {
+      "episode": 100,
+      "val_scalarized": 0.32604119926691055,
+      "val_p95_ms": 338.62635399368116,
+      "val_cost": 12.876407226562499,
+      "val_slo_violation": 0.1609375,
+      "seconds": 129.2,
+      "critic_loss": 0.1729,
+      "q_mean": -5.8443,
+      "actor_loss": 5.1275
+    },
+    {
+      "episode": 150,
+      "val_scalarized": 0.30484620574861765,
+      "val_p95_ms": 417.97583209886477,
+      "val_cost": 12.4638427734375,
+      "val_slo_violation": 0.10625,
+      "seconds": 230.7,
+      "critic_loss": 0.1424,
+      "q_mean": -5.9029,
+      "actor_loss": 4.8668
+    },
+    {
+      "episode": 200,
+      "val_scalarized": 0.269715066999197,
+      "val_p95_ms": 298.485652364453,
+      "val_cost": 11.330971191406249,
+      "val_slo_violation": 0.11093750000000001,
+      "seconds": 337.6,
+      "critic_loss": 0.165,
+      "q_mean": -5.9224,
+      "actor_loss": 5.1171
+    },
+    {
+      "episode": 250,
+      "val_scalarized": 0.25737123005092144,
+      "val_p95_ms": 289.93315294195213,
+      "val_cost": 11.0628154296875,
+      "val_slo_violation": 0.0640625,
+      "seconds": 439.1,
+      "critic_loss": 0.1927,
+      "q_mean": -5.9878,
+      "actor_loss": 5.0404
+    },
+    {
+      "episode": 300,
+      "val_scalarized": 0.2646946171298623,
+      "val_p95_ms": 414.0162030267058,
+      "val_cost": 10.70836376953125,
+      "val_slo_violation": 0.0828125,
+      "seconds": 531.1,
+      "critic_loss": 0.1711,
+      "q_mean": -5.8554,
+      "actor_loss": 5.0777
+    },
+    {
+      "episode": 350,
+      "val_scalarized": 0.2778559001162648,
+      "val_p95_ms": 553.2665404776577,
+      "val_cost": 10.91348193359375,
+      "val_slo_violation": 0.09062500000000001,
+      "seconds": 621.9,
+      "critic_loss": 0.159,
+      "q_mean": -5.8653,
+      "actor_loss": 5.1568
+    },
+    {
+      "episode": 400,
+      "val_scalarized": 0.268460382707417,
+      "val_p95_ms": 282.88998698933426,
+      "val_cost": 11.5419208984375,
+      "val_slo_violation": 0.04375,
+      "seconds": 708.0,
+      "critic_loss": 0.2164,
+      "q_mean": -5.9658,
+      "actor_loss": 5.4572
+    },
+    {
+      "episode": 450,
+      "val_scalarized": 0.27087117452174425,
+      "val_p95_ms": 278.547834779335,
+      "val_cost": 11.80199658203125,
+      "val_slo_violation": 0.035937500000000004,
+      "seconds": 791.7,
+      "critic_loss": 0.1955,
+      "q_mean": -5.7126,
+      "actor_loss": 4.769
+    },
+    {
+      "episode": 500,
+      "val_scalarized": 0.27336914651095867,
+      "val_p95_ms": 305.7299595243668,
+      "val_cost": 11.63243310546875,
+      "val_slo_violation": 0.0578125,
+      "seconds": 879.2,
+      "critic_loss": 0.2112,
+      "q_mean": -6.0189,
+      "actor_loss": 4.9502
+    }
+  ],
+  "best_val_scalarized": 0.25737123005092144,
+  "selected_fresh_val_scalarized": 0.25676024301598466,
+  "eval_preference": [
+    0.5,
+    0.35,
+    0.15
+  ],
+  "topology_training": "random 4-20 services, 2-5 tiers",
+  "init_from": "models/mo_td3_full.pt",
+  "hparams": {
+    "n_step": 3,
+    "explore_noise": 0.2,
+    "eps_start": 0.2,
+    "eps_end": 0.03,
+    "bc_weight": 1.0,
+    "bc_floor": 0.3,
+    "bc_decay_frac": 0.8,
+    "demo_target_range": [
+      0.35,
+      0.65
+    ],
+    "demo_cpus": [
+      0.25,
+      0.5,
+      1.0
+    ],
+    "default_pref_prob": 0.3,
+    "relabel_prob": 0.5,
+    "val_episodes": 16,
+    "top_k": 3,
+    "final_val_episodes": 48,
+    "fixed_topology_prob": 0.0,
+    "replica_head": "round",
+    "actor_lr": 5e-05,
+    "critic_lr": 0.0002,
+    "batch_size": 128,
+    "tau": 0.005,
+    "gamma": 0.95,
+    "policy_delay": 2,
+    "grad_clip": 5.0,
+    "randomize_initial": true
+  }
+}
