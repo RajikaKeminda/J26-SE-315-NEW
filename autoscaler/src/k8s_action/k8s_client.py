@@ -41,6 +41,18 @@ def _load_client():
     return _apps_v1
 
 
+def cluster_identity():
+    """{'api_server': host, 'kube_uid': UID of the kube-system namespace or None}. The UID is a fingerprint of the cluster itself; reading it
+    needs `get` on that one namespace (k8s/03-autoscaler/rbac-cluster-identity.yaml) and is best effort: without it only the host is returned."""
+    _load_client()
+    out = {"api_server": client.Configuration.get_default_copy().host, "kube_uid": None}
+    try:
+        out["kube_uid"] = client.CoreV1Api().read_namespace("kube-system").metadata.uid
+    except Exception:
+        pass
+    return out
+
+
 def reset_client():
     """Drops the cached client (tests / credential rotation)."""
     global _apps_v1

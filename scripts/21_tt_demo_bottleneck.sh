@@ -18,14 +18,15 @@ patch() { kubectl patch deploy "$SVC" --type=json -p "[{\"op\":\"replace\",\"pat
 case "${1:-status}" in
   create)
     NEW="${2:-300m}"
-    [ -f "$STATE" ] && { echo "already created (saved original: $(cat "$STATE")); run 'restore' first"; exit 1; }
-    cur > "$STATE"; echo "saved original cpu limit of $SVC: $(cat "$STATE")"
+    [ -s "$STATE" ] && { echo "already created (saved original: $(cat "$STATE")); run 'restore' first"; exit 1; }
+    ORIG="$(cur)"; [ -n "$ORIG" ] || { echo "cannot read the current cpu limit of $SVC (no limit set, or the cluster is unreachable / the token expired)"; exit 1; }
+    printf '%s' "$ORIG" > "$STATE"; echo "saved original cpu limit of $SVC: $ORIG"
     patch "$NEW"; kubectl rollout status deploy/"$SVC" --timeout=300s
     echo "$SVC cpu limit is now $(cur): it saturates at about $(python3 -c "print(round(float('${NEW%m}')/1000/0.082,1) if '$NEW'.endswith('m') else round(float('$NEW')/0.082,1))") req/s of its own traffic";;
   restore)
-    [ -f "$STATE" ] || { echo "no saved state: nothing to restore"; exit 1; }
+    [ -s "$STATE" ] || { rm -f "$STATE"; echo "no saved limit: nothing to restore (current limit: $(cur))"; exit 1; }
     ORIG="$(cat "$STATE")"; patch "$ORIG"; kubectl rollout status deploy/"$SVC" --timeout=300s
     rm -f "$STATE"; echo "$SVC cpu limit restored to $(cur)";;
-  status) echo "$SVC cpu limit: $(cur)   saved original: $( [ -f "$STATE" ] && cat "$STATE" || echo none )";;
+  status) echo "$SVC cpu limit: $(cur)   saved original: $( [ -s "$STATE" ] && cat "$STATE" || echo none )";;
   *) echo "usage: $0 create [cpu] | restore | status"; exit 2;;
 esac

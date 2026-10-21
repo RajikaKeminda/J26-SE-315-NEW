@@ -2,7 +2,7 @@
 PY ?= python3
 KIND_CLUSTER ?= autoscaler
 
-.PHONY: help install test train ablate pareto report reproduce calibrate live manifests dashboard docker-build kind-up kind-load deploy e2e kind-down compose-up compose-down
+.PHONY: help install db-up test train ablate pareto report reproduce calibrate live manifests dashboard docker-build kind-up kind-load deploy e2e kind-down compose-up compose-down
 
 help:            ## show this help
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -10,7 +10,10 @@ help:            ## show this help
 install:         ## install autoscaler + test dependencies
 	$(PY) -m pip install -r autoscaler/requirements-dev.txt
 
-test:            ## unit + integration tests (no cluster needed)
+db-up:           ## start the PostgreSQL that stores the agent's history
+	bash scripts/22_db_up.sh
+
+test:            ## unit + integration tests (no cluster needed; the database tests need TEST_DATABASE_URL)
 	cd autoscaler && $(PY) -m pytest -q
 
 train:           ## train the MO-TD3 agent and every ablation arm on the calibrated simulator

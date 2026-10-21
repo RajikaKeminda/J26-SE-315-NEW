@@ -70,6 +70,15 @@ def test_autoscaler_rbac_is_namespaced_and_least_privilege():
     assert all(r["apiGroups"] in (["apps"], [""]) for r in rules) and not any("secrets" in r["resources"] for r in rules)
 
 
+def test_cluster_identity_rbac_is_optional_and_reads_only_the_kube_system_namespace():
+    """The one cluster-scoped permission lives in its own file, so the namespaced Role above stays the default; it may only `get` kube-system."""
+    kinds = {d["kind"]: d for d in docs(os.path.join(K8S, "03-autoscaler", "rbac-cluster-identity.yaml"))}
+    assert set(kinds) == {"ClusterRole", "ClusterRoleBinding"}
+    rules = kinds["ClusterRole"]["rules"]
+    assert rules == [{"apiGroups": [""], "resources": ["namespaces"], "resourceNames": ["kube-system"], "verbs": ["get"]}]
+    assert kinds["ClusterRoleBinding"]["roleRef"]["name"] == kinds["ClusterRole"]["metadata"]["name"]
+
+
 def test_profile_budget_scales_with_the_observed_services():
     """The cost counts every service shown; a fixed cluster budget sized for the traced ones made every scale-up exceed it."""
     prof = dict(l.split("#")[0].strip().split("=", 1) for l in open(os.path.join(os.path.dirname(K8S), "profiles", "trainticket.env"))

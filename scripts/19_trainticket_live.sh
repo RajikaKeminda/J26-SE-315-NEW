@@ -6,12 +6,16 @@
 #   bash scripts/19_trainticket_live.sh act             # really scale (replicas only, see profiles/trainticket.env)
 #   CONTROLLED_SERVICES=ts-order-service,ts-seat-service bash scripts/19_trainticket_live.sh act
 #
+# History: with AUTOSCALER_DATABASE_URL set (bash scripts/22_db_up.sh prints it) everything the agent sees and does is stored, per
+# cluster; AUTOSCALER_CLUSTER_NAME names this cluster (default: the cluster name in the kubeconfig).
+
 # Dashboard: http://localhost:8080
 set -e
 cd "$(dirname "$0")/.."
 MODE="${1:-shadow}"; PORT="${2:-8080}"
 KUBECONFIG="${KUBECONFIG:-$HOME/.kube/tt-agent-config}"; export KUBECONFIG
 set -a; source profiles/trainticket.env; set +a
+export AUTOSCALER_CLUSTER_NAME="${AUTOSCALER_CLUSTER_NAME:-$(kubectl config view --minify -o jsonpath='{.clusters[0].name}' 2>/dev/null)}"
 [ -f .venv/bin/activate ] && source .venv/bin/activate
 
 fail() { echo "  FAIL  $1"; echo "        $2"; exit 1; }
@@ -43,6 +47,7 @@ else:
 PY
 )
 
+if [ -n "$AUTOSCALER_DATABASE_URL" ]; then echo "  ok    history: stored in the database as cluster '${AUTOSCALER_CLUSTER_NAME:-?}'"; else echo "  --    history is off (AUTOSCALER_DATABASE_URL is not set; bash scripts/22_db_up.sh)"; fi
 ARGS=(--mode live --port "$PORT" --interval "$STEP_SECONDS")
 if [ "$MODE" = "act" ]; then
   echo; echo "ACT mode: replicas of ${CONTROLLED_SERVICES:-ALL discovered services} may really change (max $MAX_REPLICAS, resize=$ALLOW_RESIZE)."
