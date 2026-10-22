@@ -293,7 +293,7 @@ What was actually executed (macOS arm64, 8 GB RAM, kind v0.27 / Kubernetes 1.32 
 
 | | status |
 |---|---|
-| 326 tests (`make test`): components, clients, engines, dashboard API, agent, training, evaluation, manifests, README sync, live-topology / critical-path / auto-discovery on recorded real traces, the history database (12 of them need PostgreSQL: `bash scripts/22_db_up.sh` and `TEST_DATABASE_URL`, otherwise skipped) | **passing**, pyflakes clean |
+| 328 tests (`make test`): components, clients, engines, dashboard API, agent, training, evaluation, manifests, README sync, live-topology / critical-path / auto-discovery on recorded real traces, the history database (12 of them need PostgreSQL: `bash scripts/22_db_up.sh` and `TEST_DATABASE_URL`, otherwise skipped) | **passing**, pyflakes clean |
 | `docker build` of both images, `docker compose config` | **run** (images built and loaded into kind) |
 | kind deployment, in-cluster autoscaler with RBAC, `scripts/14_e2e_smoke.sh` (open-loop traffic from inside the cluster → Prometheus real CPU/RSS/own-latency series + Jaeger traces → in-cluster **MO-TD3** acting) | **passed** |
 | Calibration load tests on the real cluster (36 measurements, 4 CPU limits) | **run**, committed in `calibration/` |
@@ -396,7 +396,7 @@ bash scripts/10_run_dashboard.sh          # demo mode - the calibrated simulator
 bash scripts/10_run_dashboard.sh live     # real Prometheus / Jaeger / Kubernetes
 ```
 
-Open **http://localhost:8080**: the dependency graph with live EHG latency pressure and the illuminated critical path;
+Open **http://localhost:8080**. It has two tabs under the status header. **Live**: the dependency graph (scroll to zoom, drag to move, *fit*, *expand* for a large view, click a service for its details) and the decision feed. **Analysis**: the critical-path proof, the stored History, the per-service table, preference sliders, charts and the research results. What is in them: the dependency graph with live EHG latency pressure and the illuminated critical path;
 a decision feed that shows every scale/resize *and every action the safety layer blocked, with the reason*; per-service
 pods / CPU / memory / utilisation; **preference sliders that re-steer the trained network at run time** (SLO ↔ cost ↔
 balance); a controller switch (MO-TD3 / HPA / VPA / threshold / static) to watch the baselines handle the same traffic;
