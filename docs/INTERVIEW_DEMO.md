@@ -46,7 +46,7 @@ Work with another application by changing only `--namespace`, the URLs and (if t
 
 ## Demo B - how the critical path is detected (6 min)
 
-Open the control room next to Jaeger (http://localhost:16686).
+Open the control room next to Jaeger (http://localhost:16686). The **Live** tab is the one to show: the graph zooms (wheel), pans (drag), *expand* makes it large and a click on a service opens its details; the proof panels, History and the per-service table are on the **Analysis** tab.
 
 1. The dependency graph starts with **one node** (the entry service) and fills in as traces arrive. The header says
    "topology - live from traces - N services - M edges - updated Ns ago". Nothing is declared.
