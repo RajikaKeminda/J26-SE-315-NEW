@@ -390,3 +390,25 @@ def test_replay_engine_plays_back_recorded_payloads_in_a_loop(tmp_path, live):
     assert all(g["mode"] == "replay" and g["replay"] and g["replay_length"] == 3 for g in got)
     assert got[3]["nodes"] == got[0]["nodes"]                      # looped
     r.set_controller("hpa")                                        # harmless
+
+
+# ------------------------------------------------------------------ the page: two tabs, a zoomable graph
+def test_page_has_two_tabs_and_the_graph_controls(client):
+    html = client.get("/").text
+    assert 'role="tablist"' in html and html.count('role="tabpanel"') == 2
+    live, analysis = html.split('id="tabAnalysis"')
+    assert 'id="tabLive"' in live
+    for needle in ('id="graph"', 'id="feed"', 'id="gFit"', 'id="gExpand"', 'id="gZoomIn"', 'id="nodeInfo"'):
+        assert needle in live, f"{needle} belongs on the Live tab"
+    for needle in ('id="evCard"', 'id="histCard"', 'id="tbody"', 'id="prefs"', 'id="chart"', 'id="ablation"', 'id="pareto"', 'id="curves"'):
+        assert needle in analysis, f"{needle} belongs on the Analysis tab"
+    assert 'id="graph"' not in analysis and 'id="feed"' not in analysis
+
+
+def test_page_script_escapes_payload_strings_it_puts_in_html():
+    """Service names and guard reasons come from traces / the cluster; they must go through esc() before innerHTML."""
+    import os
+    src = open(os.path.join(os.path.dirname(server.__file__), "static", "index.html")).read()
+    for needle in ("esc(short(n.id))", "esc(n.blocked_reason)", "<h3>${esc(n.id)}</h3>"):
+        assert needle in src, needle
+    assert "<em>${n.blocked_reason}</em>" not in src
