@@ -63,7 +63,7 @@ h1 span{color:var(--dim);font-weight:400}
 .card .sub{font-size:11.5px;color:var(--dimmer);margin-bottom:12px}
 
 /* ---------- graph ---------- */
-#graph{width:100%;height:352px;display:block}
+#graph{width:100%;height:var(--gh);display:block}
 .edge{stroke:var(--line);fill:none;transition:stroke .4s,stroke-width .4s}
 .edge.hot{stroke:var(--agent);opacity:.55}
 .edge.cp{stroke:var(--crit);opacity:.95}
@@ -80,8 +80,48 @@ h1 span{color:var(--dim);font-weight:400}
         font-family:var(--mono);font-size:9.5px;color:var(--dimmer)}
 .legend i{display:inline-block;width:14px;height:2px;margin-right:5px;vertical-align:middle}
 
+/* ---------- tabs ---------- */
+.tabs{display:flex;gap:4px;margin:0 0 14px;border-bottom:1px solid var(--line)}
+.tab{
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  padding:10px 18px;background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;
+  color:var(--dim);cursor:pointer;
+}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--flow);border-bottom-color:var(--flow)}
+.tab:focus-visible{outline:2px solid var(--flow);outline-offset:-2px;border-radius:6px}
+.panel[hidden]{display:none}
+
+/* ---------- graph: zoom, pan, expand, node details ---------- */
+:root{--gh:430px}
+#tabLive.expanded{--gh:calc(100vh - 262px)}
+#tabLive.expanded .grid{grid-template-columns:1fr 330px}
+#tabLive.expanded #graph{min-height:460px}
+.gwrap{position:relative}
+#graph{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+#graph.panning{cursor:grabbing}
+#graph .edge{vector-effect:non-scaling-stroke}
+#graph g[data-id]{cursor:pointer}
+#graph .lod{display:none}
+#graph.z1 .lod.l1,#graph.z2 .lod{display:inline}
+#graph .keep{display:inline}
+.node-sel{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-dasharray:2 3}
+.dim-away{opacity:.28}
+.gtools{position:absolute;top:8px;right:8px;display:flex;gap:6px}
+.gtools .btn{padding:4px 10px;background:rgba(17,24,38,.85)}
+.gtools .btn[aria-pressed="true"]{border-color:var(--flow);color:var(--flow)}
+.ninfo{
+  position:absolute;left:10px;bottom:10px;width:min(310px,calc(100% - 20px));padding:11px 13px;border-radius:10px;
+  background:rgba(17,24,38,.94);border:1px solid var(--line);font-family:var(--mono);font-size:11px;
+}
+.ninfo[hidden]{display:none}
+.ninfo h3{font-size:12px;font-weight:700;margin:0 24px 7px 0;word-break:break-all}
+.ninfo .x{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--dim);cursor:pointer;font-size:15px;line-height:1}
+.ninfo .x:hover{color:var(--ink)}
+.ninfo .why{margin-top:7px;color:var(--warn);font-size:10.5px;line-height:1.45;word-break:break-word}
+
 /* ---------- feed ---------- */
-#feed{height:352px;overflow-y:auto;display:flex;flex-direction:column;gap:7px}
+#feed{height:var(--gh);overflow-y:auto;display:flex;flex-direction:column;gap:7px}
 #feed::-webkit-scrollbar{width:5px}
 #feed::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
 .ev{
@@ -158,7 +198,7 @@ tr:last-child td{border-bottom:none}
 .pt{stroke:var(--void);stroke-width:1}
 .pt.mo_td3{fill:var(--agent)} .pt.hpa{fill:var(--warn)} .pt.static,.pt.threshold,.pt.vpa{fill:var(--dimmer)}
 .pt.front{stroke:var(--flow);stroke-width:2}
-@media(max-width:1000px){.grid{grid-template-columns:1fr}#graph,#feed{height:300px}}
+@media(max-width:1000px){.grid,#tabLive.expanded .grid{grid-template-columns:1fr}:root,#tabLive.expanded{--gh:340px}#tabLive.expanded #graph{min-height:340px}.tab{padding:10px 12px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -190,11 +230,26 @@ tr:last-child td{border-bottom:none}
 
 <div id="banner" role="status"></div>
 
+<nav class="tabs" role="tablist" aria-label="Control room views">
+  <button class="tab" id="tabBtnLive" role="tab" type="button" aria-controls="tabLive" aria-selected="true" data-tab="live">Live</button>
+  <button class="tab" id="tabBtnAnalysis" role="tab" type="button" aria-controls="tabAnalysis" aria-selected="false" tabindex="-1" data-tab="analysis">Analysis</button>
+</nav>
+
+<section id="tabLive" class="panel" role="tabpanel" aria-labelledby="tabBtnLive">
 <div class="grid">
-  <div class="card">
+  <div class="card gcard">
     <h2>Service dependency graph</h2>
-    <div class="sub">Edge thickness is live latency pressure (EHG); on a real cluster the edges are learned from traces and thickness is call volume (the number is the decayed call count). The illuminated chain is the current critical path. Node label: pods × CPU cores.</div>
-    <svg id="graph" viewBox="0 0 760 352" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="sub">The graph is learned from live traces on a real cluster (the thickness of an edge is call volume) and comes from the latency graph (EHG) in the simulator. The red chain is the current critical path; the ring is CPU utilisation; a dashed ring is a service the agent only observes. Scroll to zoom, drag to move, click a service for details.</div>
+    <div class="gwrap">
+      <svg id="graph" viewBox="0 0 760 352" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Service dependency graph"></svg>
+      <div class="gtools" role="group" aria-label="Graph view">
+        <button class="btn" id="gZoomIn" type="button" title="zoom in" aria-label="zoom in">+</button>
+        <button class="btn" id="gZoomOut" type="button" title="zoom out" aria-label="zoom out">&minus;</button>
+        <button class="btn" id="gFit" type="button" title="fit the whole graph in view">fit</button>
+        <button class="btn" id="gExpand" type="button" aria-pressed="false" title="make the graph larger (Esc to return)">expand</button>
+      </div>
+      <div id="nodeInfo" class="ninfo" hidden></div>
+    </div>
     <div class="legend">
       <span><i style="background:var(--crit)"></i>critical path</span>
       <span><i style="background:var(--agent)"></i>latency pressure</span>
@@ -210,7 +265,9 @@ tr:last-child td{border-bottom:none}
     <div id="feed"><div class="empty">waiting for first tick…</div></div>
   </div>
 </div>
+</section>
 
+<section id="tabAnalysis" class="panel" role="tabpanel" aria-labelledby="tabBtnAnalysis" hidden>
 <div class="card" id="evCard" style="display:none;margin-bottom:14px">
   <h2>Critical path — verified against real requests</h2>
   <div class="sub" id="evSub"></div>
@@ -305,6 +362,7 @@ tr:last-child td{border-bottom:none}
     </div>
   </div>
 </div>
+</section>
 
 <script>
 const SVGNS='http://www.w3.org/2000/svg';
@@ -313,67 +371,103 @@ const $=id=>document.getElementById(id);
 let lastBlocked={}, objectives=['slo','cost','balance'], prefLocked=false, lastSlo=250;
 const short=id=>id.replace('-service','');
 
-/* ---------- layout the DAG into layers ---------- */
-function layout(nodes,edges,W,H){
-  const kids={},indeg={};
+/* ---------- layout: connected services in layers, services without call edges in a grid below ---------- */
+const COL_W=140, ROW_H=40, PAD_X=70, PAD_Y=40;
+function layout(nodes,edges){
+  const kids={},indeg={},linked=new Set();
   nodes.forEach(n=>{kids[n.id]=[];indeg[n.id]=0;});
-  edges.forEach(e=>{if(kids[e.source]){kids[e.source].push(e.target);indeg[e.target]=(indeg[e.target]||0)+1;}});
-  const depth={};
-  const roots=nodes.filter(n=>!indeg[n.id]).map(n=>n.id);
-  const start=roots.length?roots:[nodes[0].id];
+  edges.forEach(e=>{if(kids[e.source]){kids[e.source].push(e.target);indeg[e.target]=(indeg[e.target]||0)+1;linked.add(e.source);linked.add(e.target);}});
+  const conn=nodes.filter(n=>linked.has(n.id)||n.is_entry), lone=nodes.filter(n=>!linked.has(n.id)&&!n.is_entry);
+  const depth={}, roots=conn.filter(n=>!indeg[n.id]).map(n=>n.id), start=roots.length?roots:(conn.length?[conn[0].id]:[]);
   start.forEach(r=>depth[r]=0);
   let q=[...start],guard=0;
-  while(q.length&&guard++<2000){
+  while(q.length&&guard++<5000){
     const cur=q.shift();
     (kids[cur]||[]).forEach(k=>{
       const d=(depth[cur]||0)+1;
       if(depth[k]===undefined||d>depth[k]){depth[k]=d;q.push(k);}
     });
   }
-  nodes.forEach(n=>{if(depth[n.id]===undefined)depth[n.id]=0;});
+  conn.forEach(n=>{if(depth[n.id]===undefined)depth[n.id]=0;});
   const byLayer={};
-  nodes.forEach(n=>{(byLayer[depth[n.id]]=byLayer[depth[n.id]]||[]).push(n);});
+  conn.forEach(n=>{(byLayer[depth[n.id]]=byLayer[depth[n.id]]||[]).push(n);});
   const layers=Object.keys(byLayer).map(Number).sort((a,b)=>a-b);
-  const padX=78, padY=44;
-  const stepX=layers.length>1?(W-padX*2)/(layers.length-1):0;
-  const pos={};
+  const widest=Math.max(1,...layers.map(L=>byLayer[L].length));
+  // a small graph keeps the size it always had; a large one gets the room it needs
+  const W=Math.max(760,PAD_X*2+Math.max(layers.length-1,0)*COL_W), mainH=Math.max(352,PAD_Y*2+(widest-1)*ROW_H);
+  const pos={}, stepX=layers.length>1?(W-PAD_X*2)/(layers.length-1):0;
   layers.forEach((L,li)=>{
-    const group=byLayer[L];
-    const stepY=group.length>1?(H-padY*2)/(group.length-1):0;
-    group.forEach((n,i)=>{pos[n.id]={x:padX+li*stepX, y:group.length>1?padY+i*stepY:H/2};});
+    const group=byLayer[L], stepY=group.length>1?(mainH-PAD_Y*2)/(group.length-1):0;
+    group.forEach((n,i)=>{pos[n.id]={x:PAD_X+li*stepX,y:group.length>1?PAD_Y+i*stepY:mainH/2};});
   });
-  return pos;
+  let H=mainH, loneBox=null;
+  if(lone.length){
+    const cols=Math.max(1,Math.min(lone.length,Math.floor((W-PAD_X)/92))), rows=Math.ceil(lone.length/cols);
+    const top=mainH+34;
+    lone.forEach((n,i)=>{pos[n.id]={x:PAD_X+(i%cols)*92,y:top+Math.floor(i/cols)*58};});
+    H=top+(rows-1)*58+PAD_Y;
+    loneBox={x:PAD_X-44,y:mainH-8,w:Math.min(cols,lone.length)*92+8,h:H-mainH+8-PAD_Y/2,n:lone.length};
+  }
+  return {pos,W,H,loneBox};
 }
 
-/* ---------- render the dependency graph ---------- */
+/* ---------- the graph: a zoomable, pannable viewport (the view survives the redraw of every tick) ---------- */
+const G={k:1,x:0,y:0,user:false,sel:null,vw:0,vh:0,W:760,H:352,last:null,moved:false,drag:null,pointers:new Map(),pinch:0};
+const gSvg=()=>$('graph');
+function applyView(){
+  const vp=$('vp'); if(vp) vp.setAttribute('transform',`translate(${G.x},${G.y}) scale(${G.k})`);
+  gSvg().setAttribute('class',(gSvg().classList.contains('panning')?'panning ':'')+(G.k>=1.1?'z2':G.k>=0.75?'z1':'z0'));
+}
+function fitView(){
+  const k=Math.max(0.15,Math.min(1.5,(G.vw-24)/G.W,(G.vh-24)/G.H));
+  G.k=k; G.x=(G.vw-G.W*k)/2; G.y=(G.vh-G.H*k)/2; G.user=false; applyView();
+}
+function zoomAt(f,cx,cy){
+  const k=Math.max(0.15,Math.min(6,G.k*f)), r=k/G.k;
+  G.x=cx-(cx-G.x)*r; G.y=cy-(cy-G.y)*r; G.k=k; G.user=true; applyView();
+}
+function svgPoint(ev){const r=gSvg().getBoundingClientRect();return [ev.clientX-r.left,ev.clientY-r.top];}
+
 function drawGraph(d){
-  const svg=$('graph'); svg.innerHTML='';
-  const W=760,H=352;
-  const pos=layout(d.nodes,d.edges,W,H);
+  G.last=d;
+  const svg=gSvg();
+  if(!svg.clientWidth) return;                                   // hidden tab: drawn when it is shown again
+  if(svg.clientWidth!==G.vw||svg.clientHeight!==G.vh){G.vw=svg.clientWidth;G.vh=svg.clientHeight;svg.setAttribute('viewBox',`0 0 ${G.vw} ${G.vh}`);}
+  const L=layout(d.nodes,d.edges), pos=L.pos, first=!svg.firstChild;
+  G.W=L.W; G.H=L.H;
+  svg.innerHTML='';
+  const vp=el('g',{id:'vp'}); svg.appendChild(vp);
+  const sel=G.sel&&d.nodes.some(n=>n.id===G.sel)?G.sel:null; G.sel=sel;
+  if(L.loneBox){
+    vp.appendChild(el('rect',{x:L.loneBox.x,y:L.loneBox.y,width:L.loneBox.w+40,height:L.loneBox.h,rx:10,fill:'none',stroke:'#233047','stroke-dasharray':'3 5'}));
+    const t=el('text',{class:'node-sub keep',x:L.loneBox.x+10,y:L.loneBox.y+14}); t.textContent=`observed only - ${L.loneBox.n} services without call edges (no traces)`; vp.appendChild(t);
+  }
+  const maxCalls=Math.max(1,...d.edges.map(x=>x.calls||0));
   d.edges.forEach(e=>{
     const a=pos[e.source], b=pos[e.target];
     if(!a||!b)return;
     const mx=(a.x+b.x)/2;
     const path=`M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}`;
-    const maxCalls=Math.max(1,...d.edges.map(x=>x.calls||0));
     const w=(e.calls!=null)?1+3.5*Math.log1p(e.calls)/Math.log1p(maxCalls)+Math.min(1,e.latency_pressure)*1.5
                           :1+Math.min(1,e.latency_pressure)*5;
-    const cls='edge '+(e.on_critical_path?'cp':(e.latency_pressure>0.35?'hot':''));
-    svg.appendChild(el('path',{d:path,class:cls,'stroke-width':e.on_critical_path?Math.max(2.4,w):w}));
-    if(e.calls!=null && d.nodes.length<=16){
-      const lb=el('text',{class:'node-sub','text-anchor':'middle',x:mx,y:(a.y+b.y)/2-3,opacity:.75});
-      lb.textContent=Math.round(e.calls); svg.appendChild(lb);
+    const cls='edge '+(e.on_critical_path?'cp':(e.latency_pressure>0.35?'hot':''))+(sel&&e.source!==sel&&e.target!==sel?' dim-away':'');
+    const pe=el('path',{d:path,class:cls,'stroke-width':e.on_critical_path?Math.max(2.4,w):w});
+    const tip=el('title'); tip.textContent=`${short(e.source)} → ${short(e.target)} · share ${Math.round(e.traffic_share*100)}%`+(e.calls!=null?` · calls ${Math.round(e.calls)}`:'')+` · latency pressure ${e.latency_pressure}`;
+    pe.appendChild(tip); vp.appendChild(pe);
+    if(e.calls!=null){
+      const lb=el('text',{class:'node-sub lod l1'+(e.on_critical_path||sel&&(e.source===sel||e.target===sel)?' keep':''),'text-anchor':'middle',x:mx,y:(a.y+b.y)/2-3,opacity:.75});
+      lb.textContent=Math.round(e.calls); vp.appendChild(lb);
     }
     if(e.on_critical_path){
       const p=el('circle',{class:'pulse',r:3.2});
       p.appendChild(el('animateMotion',{dur:'1.9s',repeatCount:'indefinite',path:path}));
-      svg.appendChild(p);
+      vp.appendChild(p);
     }
   });
-  const r=d.nodes.length>9?17:23;
+  const r=d.nodes.length>9?15:23;
   d.nodes.forEach(n=>{
     const p=pos[n.id]; if(!p)return;
-    const g=el('g',{transform:`translate(${p.x},${p.y})`});
+    const g=el('g',{transform:`translate(${p.x},${p.y})`,'data-id':n.id});
     const fill=n.status==='critical'?'rgba(255,107,138,.16)':n.status==='warn'?'rgba(242,166,90,.14)':'rgba(69,208,192,.10)';
     g.appendChild(el('circle',{r:r,class:'node-core',fill:fill}));
     const ring=el('circle',{r:r,class:`node-ring ${n.status}${n.on_critical_path?' cp':''}`});
@@ -386,12 +480,87 @@ function drawGraph(d){
       g.appendChild(el('path',{d:`M0,${-R} A${R},${R} 0 ${large},1 ${R*Math.cos(ang)},${R*Math.sin(ang)}`,
         fill:'none',stroke:col,'stroke-width':2.2,'stroke-linecap':'round',opacity:.85}));
     }
-    const t=el('text',{class:'node-label','text-anchor':'middle',y:2}); t.textContent=short(n.id).replace('ts-',''); g.appendChild(t);
-    const s=el('text',{class:'node-sub','text-anchor':'middle',y:14});
-    s.textContent=`${n.replicas}×${n.cpu}c${n.pending?' +'+n.pending:''}`; g.appendChild(s);
-    if(n.is_entry){const e2=el('text',{class:'node-sub','text-anchor':'middle',y:-r-10,fill:'#45D0C0'});e2.textContent='entry';g.appendChild(e2);}
-    svg.appendChild(g);
+    if(n.id===sel){g.appendChild(el('circle',{r:r+9,class:'node-sel'}));}
+    else if(sel){g.setAttribute('class','dim-away'+(d.edges.some(e=>(e.source===sel&&e.target===n.id)||(e.target===sel&&e.source===n.id))?' near':''));}
+    const important=n.is_entry||n.on_critical_path||n.id===sel;
+    const t=el('text',{class:'node-label lod l1'+(important?' keep':''),'text-anchor':'middle',y:2}); t.textContent=short(n.id).replace('ts-',''); g.appendChild(t);
+    const s2=el('text',{class:'node-sub lod'+(important&&n.id===sel?' keep':''),'text-anchor':'middle',y:14});
+    s2.textContent=`${n.replicas}×${n.cpu}c${n.pending?' +'+n.pending:''}`; g.appendChild(s2);
+    if(n.is_entry){const e2=el('text',{class:'node-sub keep','text-anchor':'middle',y:-r-10,fill:'#45D0C0'});e2.textContent='entry';g.appendChild(e2);}
+    const tt=el('title'); tt.textContent=`${n.id} · ${n.replicas} pod${n.replicas===1?'':'s'} · cpu ${Math.round(n.utilization*100)}% · p95 ${n.latency_p95_ms} ms`; g.appendChild(tt);
+    vp.appendChild(g);
   });
+  svg.querySelectorAll('.dim-away.near').forEach(g=>g.classList.remove('dim-away'));
+  if(first||!G.user) fitView(); else applyView();
+  drawNodeInfo(d);
+}
+function drawNodeInfo(d){
+  const box=$('nodeInfo'), n=G.sel&&d.nodes.find(x=>x.id===G.sel);
+  if(!n){box.hidden=true; box.innerHTML=''; return;}
+  const sg=v=>(v>0?'+':'')+v, pct=v=>Math.round(v*100)+'%';
+  const prop=n.proposed_delta!==n.applied_delta?` (agent wanted ${sg(n.proposed_delta)})`:'';
+  const bits=[]; if(n.is_entry)bits.push('entry'); if(n.on_critical_path)bits.push('critical path'); bits.push(n.controlled===false?'observed only':'agent may control');
+  box.hidden=false;
+  box.innerHTML=`<button class="x" type="button" aria-label="close" id="ninfoX">&times;</button><h3>${esc(n.id)}</h3>
+    <div class="kv"><span>pods (ready / pending)</span><span>${n.replicas} (${n.ready} / ${n.pending})</span>
+    <span>cpu / memory limit</span><span>${n.cpu} cores / ${n.mem} MiB</span>
+    <span>cpu / memory use</span><span>${pct(n.utilization)} / ${pct(n.mem_utilization||0)}</span>
+    <span>p95 / mean latency</span><span>${n.latency_p95_ms} / ${n.latency_ms} ms</span>
+    <span>requests</span><span>${n.requests} /s</span>
+    <span>this step</span><span>${n.applied_delta?sg(n.applied_delta)+' pod':'no change'}${esc(prop)}</span></div>
+    <div class="small" style="margin-top:6px">${esc(bits.join(' · '))}</div>
+    ${n.blocked_reason?`<div class="why">${esc(n.blocked_reason)}</div>`:''}`;
+  $('ninfoX').onclick=()=>{G.sel=null; drawGraph(G.last);};
+}
+
+/* graph controls: wheel / pinch zoom, drag to pan, click to select, buttons, Esc */
+function initGraphControls(){
+  const svg=gSvg();
+  svg.addEventListener('wheel',e=>{e.preventDefault(); const [cx,cy]=svgPoint(e); zoomAt(Math.exp(-e.deltaY*(e.ctrlKey?0.01:0.0016)),cx,cy);},{passive:false});
+  svg.addEventListener('pointerdown',e=>{
+    G.pointers.set(e.pointerId,svgPoint(e)); G.moved=false;
+    if(G.pointers.size===1) G.drag={x:e.clientX,y:e.clientY,gx:G.x,gy:G.y};
+    if(G.pointers.size===2){const [a,b]=[...G.pointers.values()]; G.pinch=Math.hypot(a[0]-b[0],a[1]-b[1]); G.drag=null;}
+  });
+  svg.addEventListener('pointermove',e=>{
+    if(!G.pointers.has(e.pointerId)) return;
+    G.pointers.set(e.pointerId,svgPoint(e));
+    if(G.pointers.size===2){
+      const [a,b]=[...G.pointers.values()], dist=Math.hypot(a[0]-b[0],a[1]-b[1]);
+      if(G.pinch>0){zoomAt(dist/G.pinch,(a[0]+b[0])/2,(a[1]+b[1])/2); G.moved=true;}
+      G.pinch=dist; return;
+    }
+    if(!G.drag) return;
+    const dx=e.clientX-G.drag.x, dy=e.clientY-G.drag.y;
+    if(!G.moved&&Math.hypot(dx,dy)<4) return;
+    if(!G.moved){try{svg.setPointerCapture(e.pointerId);}catch(_){}}
+    G.moved=true; svg.classList.add('panning'); G.x=G.drag.gx+dx; G.y=G.drag.gy+dy; G.user=true; applyView();
+  });
+  const up=e=>{G.pointers.delete(e.pointerId); if(G.pointers.size<2)G.pinch=0; if(!G.pointers.size){G.drag=null;svg.classList.remove('panning');applyView();}};
+  svg.addEventListener('pointerup',up); svg.addEventListener('pointercancel',up);
+  svg.addEventListener('click',e=>{
+    if(G.moved){G.moved=false;return;}
+    const g=e.target.closest&&e.target.closest('g[data-id]');
+    G.sel=g?(G.sel===g.getAttribute('data-id')?null:g.getAttribute('data-id')):null;
+    if(G.last) drawGraph(G.last);
+  });
+  svg.addEventListener('dblclick',e=>{e.preventDefault(); fitView();});
+  const mid=()=>[G.vw/2,G.vh/2];
+  $('gZoomIn').onclick=()=>zoomAt(1.35,...mid());
+  $('gZoomOut').onclick=()=>zoomAt(1/1.35,...mid());
+  $('gFit').onclick=fitView;
+  $('gExpand').onclick=()=>setExpanded(!$('tabLive').classList.contains('expanded'));
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape'||tab!=='live') return;
+    if(G.sel){G.sel=null; if(G.last) drawGraph(G.last);} else if($('tabLive').classList.contains('expanded')) setExpanded(false);
+  });
+  if(window.ResizeObserver) new ResizeObserver(()=>{ if(G.last&&tab==='live') drawGraph(G.last); }).observe(svg);
+}
+function setExpanded(on){
+  $('tabLive').classList.toggle('expanded',on);
+  const b=$('gExpand'); b.setAttribute('aria-pressed',String(on)); b.textContent=on?'collapse':'expand';
+  G.user=false;                                                  // the new size gets a fresh fit (the ResizeObserver redraws)
+  if(G.last) drawGraph(G.last);
 }
 
 /* ---------- critical-path evidence: the agent's path vs what real requests waited for ---------- */
@@ -436,17 +605,17 @@ function pushFeed(d){
   if(d.breaker_open) items.push({cls:'brk',body:'<b>circuit breaker open</b> <em>— falling back to HPA rules until the SLO recovers</em>'});
   d.nodes.forEach(n=>{
     const acted=[];
-    if(n.applied_delta>0) items.push({cls:'up',body:`scaled up <b>${short(n.id)}</b> <em>+${n.applied_delta} pod${n.applied_delta>1?'s':''}</em>`});
-    else if(n.applied_delta<0) items.push({cls:'down',body:`scaled down <b>${short(n.id)}</b> <em>${n.applied_delta} pod${n.applied_delta<-1?'s':''}</em>`});
+    if(n.applied_delta>0) items.push({cls:'up',body:`scaled up <b>${esc(short(n.id))}</b> <em>+${n.applied_delta} pod${n.applied_delta>1?'s':''}</em>`});
+    else if(n.applied_delta<0) items.push({cls:'down',body:`scaled down <b>${esc(short(n.id))}</b> <em>${n.applied_delta} pod${n.applied_delta<-1?'s':''}</em>`});
     if(n.applied_cpu!==n.cpu||n.applied_mem!==n.mem)
-      items.push({cls:'up',body:`resized <b>${short(n.id)}</b> <em>cpu ${n.cpu}→${n.applied_cpu} · mem ${n.mem}→${n.applied_mem}MiB</em>`});
+      items.push({cls:'up',body:`resized <b>${esc(short(n.id))}</b> <em>cpu ${n.cpu}→${n.applied_cpu} · mem ${n.mem}→${n.applied_mem}MiB</em>`});
     const acting=n.applied_delta!==0||n.applied_cpu!==n.cpu||n.applied_mem!==n.mem;
     if(n.blocked_reason&&!acting){
       // a cooldown counting down ("3 of 6" -> "4 of 6") is ONE event, not one per window
       const key=n.blocked_reason.replace(/\(\d+ of \d+\)/g,'').trim();
       // routine clamps and resize cooldowns are not news; budget / memory-floor / scale-down / HOLD / API errors are
       const important=/budget|memory floor|scale-down cooldown|HOLD|k8s error/.test(n.blocked_reason);
-      if(important&&lastBlocked[n.id]!==key) items.push({cls:'block',body:`<b>${short(n.id)}</b> <em>${n.blocked_reason}</em>`});
+      if(important&&lastBlocked[n.id]!==key) items.push({cls:'block',body:`<b>${esc(short(n.id))}</b> <em>${esc(n.blocked_reason)}</em>`});
       lastBlocked[n.id]=key;
     } else lastBlocked[n.id]=null;
   });
@@ -473,7 +642,7 @@ function drawTable(d){
     if(n.applied_mem!==n.mem) bits.push('mem '+n.applied_mem);
     const dcls=n.applied_delta>0?'p':n.applied_delta<0?'n':'z';
     tr.innerHTML=`
-      <td><div class="svc">${short(n.id)}
+      <td><div class="svc">${esc(short(n.id))}
         ${n.is_entry?'<span class="tag entry">entry</span>':''}${n.on_critical_path?'<span class="tag">cp</span>':''}</div></td>
       <td>${n.replicas}${n.pending?`<span style="color:var(--warn)"> (+${n.pending})</span>`:''}</td>
       <td>${n.cpu}</td><td>${n.mem}</td>
@@ -744,6 +913,43 @@ async function initControls(){
   }catch(e){}
 }
 
+/* ---------- tabs: Live (graph + decision feed) and Analysis (everything else) ---------- */
+let tab='live', lastPayload=null;
+const TAB_IDS=['live','analysis'];
+function drawAnalysis(d){ drawEvidence(d); drawTable(d); drawChart(d); drawObjectives(d); }
+function showTab(name,focus){
+  if(!TAB_IDS.includes(name)) name='live';
+  tab=name;
+  TAB_IDS.forEach(t=>{
+    const on=t===name, btn=$('tabBtn'+t[0].toUpperCase()+t.slice(1));
+    btn.setAttribute('aria-selected',String(on)); btn.tabIndex=on?0:-1;
+    $('tab'+t[0].toUpperCase()+t.slice(1)).hidden=!on;
+    if(on&&focus) btn.focus();
+  });
+  try{ localStorage.setItem('cr.tab',name); }catch(e){}
+  if(location.hash!=='#'+name) history.replaceState(null,'','#'+name);
+  clearInterval(histTimer); histTimer=null;
+  if(name==='analysis'){
+    if(lastPayload) drawAnalysis(lastPayload);
+    drawHistory(); histTimer=setInterval(drawHistory,30000);       // only while it can be seen
+  } else if(lastPayload) drawGraph(lastPayload);
+}
+function initTabs(){
+  document.querySelectorAll('.tab').forEach(b=>{
+    b.onclick=()=>showTab(b.dataset.tab);
+    b.onkeydown=e=>{
+      const i=TAB_IDS.indexOf(b.dataset.tab);
+      if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault(); showTab(TAB_IDS[(i+(e.key==='ArrowRight'?1:TAB_IDS.length-1))%TAB_IDS.length],true);}
+      else if(e.key==='Home'){e.preventDefault(); showTab('live',true);}
+      else if(e.key==='End'){e.preventDefault(); showTab('analysis',true);}
+    };
+  });
+  window.addEventListener('hashchange',()=>{const h=location.hash.slice(1); if(TAB_IDS.includes(h)&&h!==tab) showTab(h);});
+  let start=location.hash.slice(1);
+  if(!TAB_IDS.includes(start)){try{start=localStorage.getItem('cr.tab');}catch(e){start=null;}}
+  showTab(TAB_IDS.includes(start)?start:'live');
+}
+
 /* ---------- socket ---------- */
 function connect(){
   const proto=location.protocol==='https:'?'wss':'ws';
@@ -752,12 +958,14 @@ function connect(){
     const d=JSON.parse(e.data);
     if(!d.nodes) return;
     paused=!!d.paused;
-    drawHeader(d); drawStatus(d); drawGraph(d); drawEvidence(d); pushFeed(d); drawTable(d); drawChart(d); drawObjectives(d);
+    lastPayload=d;
+    drawHeader(d); drawStatus(d); pushFeed(d);                       // always: the header, and the feed keeps its history even when not shown
+    if(tab==='live') drawGraph(d); else drawAnalysis(d);
   };
   ws.onclose=()=>{const p=$('livePill'); p.className='pill alert'; p.textContent='disconnected — retrying'; setTimeout(connect,2500);};
   ws.onopen=()=>{const p=$('livePill'); p.className='pill on'; p.innerHTML='<span class="dot"></span>live';};
 }
-initControls().then(loadStatic); connect(); drawHistory(); histTimer=setInterval(drawHistory,30000);
+initGraphControls(); initTabs(); initControls().then(loadStatic); connect();
 </script>
 </body>
 </html>
