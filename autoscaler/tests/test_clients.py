@@ -324,3 +324,19 @@ def test_k8s_pod_ages_reports_the_youngest_pod_per_deployment(monkeypatch):
                         lambda: type("C", (), {"list_namespaced_pod": lambda self, namespace: type("L", (), {"items": pods})()})())
     ages = k8s_client.pod_ages("ns")
     assert 39 < ages["svc-a"] < 45 and 890 < ages["svc-b"] < 910                          # deleting pods do not count
+
+
+def test_k8s_with_memory_locked_only_the_cpu_limit_is_patched(fake_k8s, monkeypatch):
+    """ALLOW_MEMORY_RESIZE=0: the patch carries no memory at all (limit nor request), and a request is only lowered if the new limit would fall below it."""
+    monkeypatch.setattr(config, "ALLOW_MEMORY_RESIZE", False)
+    fake_k8s.deps["a"] = _Dep("a", 1, cpu="300m", mem="800Mi")
+    fake_k8s.deps["a"].spec.template.spec.containers[0].resources.requests = {"cpu": "50m", "memory": "128Mi"}
+    assert k8s_client.set_resources("a", 1.0, 768.0) is True                 # the memory argument (a rounded 768) must be ignored
+    _, body = fake_k8s.template_patches[-1]
+    res = body["spec"]["template"]["spec"]["containers"][0]["resources"]
+    assert res == {"limits": {"cpu": "1000m"}}, "no memory and no request in the patch"
+    assert k8s_client.set_resources("a", 1.0, 768.0) is False                # already 1 core: nothing to do
+    fake_k8s.deps["a"].spec.template.spec.containers[0].resources.requests = {"cpu": "800m", "memory": "128Mi"}
+    k8s_client.set_resources("a", 0.5, 800.0)
+    res = fake_k8s.template_patches[-1][1]["spec"]["template"]["spec"]["containers"][0]["resources"]
+    assert res == {"limits": {"cpu": "500m"}, "requests": {"cpu": "500m"}}, "a request may not exceed its limit"

@@ -53,8 +53,9 @@ def decode_action(services, metrics, idx, cont, replica_only=False):
         if not replica_only:
             cpu = quantize(u_to_resource(cont[i][0], config.CPU_MIN, config.CPU_MAX),
                            config.CPU_QUANTUM, config.CPU_MIN, config.CPU_MAX)
-            mem = quantize(u_to_resource(cont[i][1], config.MEM_MIN_MB, config.MEM_MAX_MB),
-                           config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
+            if config.ALLOW_MEMORY_RESIZE:
+                mem = quantize(u_to_resource(cont[i][1], config.MEM_MIN_MB, config.MEM_MAX_MB),
+                               config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
         proposals[s] = {"dr": dr, "cpu": cpu, "mem": mem}
     return proposals
 

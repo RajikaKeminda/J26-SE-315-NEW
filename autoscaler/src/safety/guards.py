@@ -114,7 +114,8 @@ class SafetyGuard:
                 notes.append(f"clamped replicas to [{self.min_replicas},{self.max_replicas}]")
                 a["dr"] = clamped - cur["replicas"]
             a["cpu"] = quantize(a["cpu"], config.CPU_QUANTUM, config.CPU_MIN, config.CPU_MAX)
-            a["mem"] = quantize(a["mem"], config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
+            a["mem"] = (quantize(a["mem"], config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
+                        if config.ALLOW_MEMORY_RESIZE else cur["mem"])       # locked memory is left exactly as it is, not rounded to the grid
 
             if not physical_only:
                 # 2. memory floor ------------------------------------------------

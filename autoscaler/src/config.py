@@ -242,6 +242,9 @@ TOPOLOGY_MIN_CALLS = _env_float("TOPOLOGY_MIN_CALLS", 2.0)
 # (a resize is a rolling restart that briefly runs old and new pod side by side).
 NODE_MEMORY_RESERVE_MB = _env_float("NODE_MEMORY_RESERVE_MB", 768.0)
 ALLOW_RESIZE = os.environ.get("ALLOW_RESIZE", "1") == "1"
+# ALLOW_MEMORY_RESIZE=0: the agent may change CPU but never memory (decode_action ignores the memory output, in training and live alike). For a node
+# whose memory is the scarce resource, where a memory increase could stall it but a CPU limit costs nothing.
+ALLOW_MEMORY_RESIZE = os.environ.get("ALLOW_MEMORY_RESIZE", "1") == "1"
 CONTROLLED_SERVICES = [x.strip() for x in os.environ.get("CONTROLLED_SERVICES", "").split(",") if x.strip()]
 
 # ---------------------------------------------------------------------------

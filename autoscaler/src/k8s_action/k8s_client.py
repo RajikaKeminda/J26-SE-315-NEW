@@ -210,6 +210,8 @@ def set_resources(service: str, cpu: float, mem_mb: float, namespace: str = None
     dep = apps_v1.read_namespaced_deployment(name=service, namespace=namespace)
     c = _container(dep, service)
     limits = (c.resources.limits or {}) if c.resources else {}
+    if not app_config.ALLOW_MEMORY_RESIZE:
+        return _set_cpu_only(apps_v1, dep, c, service, namespace, cpu)
     cpu_m, mem_mi = int(round(cpu * 1000)), int(round(mem_mb))
     if (abs(parse_cpu(limits.get("cpu")) - cpu_m / 1000.0) < 1e-6
             and abs(parse_mem_mb(limits.get("memory")) - mem_mi) < 0.5):
@@ -219,6 +221,23 @@ def set_resources(service: str, cpu: float, mem_mb: float, namespace: str = None
         {"name": c.name, "resources": {"requests": res, "limits": res}}]}}}}
     apps_v1.patch_namespaced_deployment(name=service, namespace=namespace, body=patch)
     print(f"[k8s_client] resized {service}: cpu={cpu_m}m mem={mem_mi}Mi (rolling update)")
+    return True
+
+
+def _set_cpu_only(apps_v1, dep, c, service, namespace, cpu):
+    """ALLOW_MEMORY_RESIZE=0: change the CPU LIMIT only. Memory (request and limit) is not in the patch, so it stays exactly as it is, and the CPU
+    request is left alone unless the new limit would fall below it (a request may not exceed its limit)."""
+    limits = (c.resources.limits or {}) if c.resources else {}
+    requests = (c.resources.requests or {}) if c.resources else {}
+    cpu_m = int(round(cpu * 1000))
+    if abs(parse_cpu(limits.get("cpu")) - cpu_m / 1000.0) < 1e-6:
+        return False
+    res = {"limits": {"cpu": f"{cpu_m}m"}}
+    if requests.get("cpu") is not None and parse_cpu(requests["cpu"]) * 1000 > cpu_m:
+        res["requests"] = {"cpu": f"{cpu_m}m"}
+    apps_v1.patch_namespaced_deployment(name=service, namespace=namespace,
+                                        body={"spec": {"template": {"spec": {"containers": [{"name": c.name, "resources": res}]}}}})
+    print(f"[k8s_client] resized {service}: cpu limit={cpu_m}m, memory untouched (restart)")
     return True
 
 

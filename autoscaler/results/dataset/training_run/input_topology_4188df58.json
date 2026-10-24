@@ -1,0 +1,129 @@
+{
+ "name": "trainticket-sim",
+ "entry": "ts-gateway-service",
+ "work_ms": {
+  "ts-seat-service": 18.4,
+  "ts-basic-service": 17.1,
+  "ts-order-service": 81.6,
+  "ts-route-service": 13.0,
+  "ts-train-service": 10.0,
+  "ts-travel-service": 24.9,
+  "ts-gateway-service": 14.4,
+  "ts-station-service": 6.6,
+  "ts-contacts-service": 8.6,
+  "ts-preserve-service": 15.0,
+  "ts-security-service": 18.7
+ },
+ "services": [
+  "ts-gateway-service",
+  "ts-basic-service",
+  "ts-contacts-service",
+  "ts-order-service",
+  "ts-preserve-service",
+  "ts-route-service",
+  "ts-seat-service",
+  "ts-security-service",
+  "ts-station-service",
+  "ts-train-service",
+  "ts-travel-service"
+ ],
+ "call_graph": {
+  "ts-seat-service": [
+   [
+    "ts-order-service",
+    1.0
+   ]
+  ],
+  "ts-basic-service": [
+   [
+    "ts-route-service",
+    0.2682
+   ],
+   [
+    "ts-station-service",
+    0.4636
+   ],
+   [
+    "ts-train-service",
+    0.2682
+   ]
+  ],
+  "ts-order-service": [],
+  "ts-route-service": [],
+  "ts-train-service": [],
+  "ts-travel-service": [
+   [
+    "ts-basic-service",
+    0.3333333333333333
+   ],
+   [
+    "ts-seat-service",
+    0.6666666666666666
+   ]
+  ],
+  "ts-gateway-service": [
+   [
+    "ts-basic-service",
+    0.0738
+   ],
+   [
+    "ts-contacts-service",
+    0.2685
+   ],
+   [
+    "ts-order-service",
+    0.2953
+   ],
+   [
+    "ts-preserve-service",
+    0.1074
+   ],
+   [
+    "ts-seat-service",
+    0.0738
+   ],
+   [
+    "ts-security-service",
+    0.0738
+   ],
+   [
+    "ts-travel-service",
+    0.1074
+   ]
+  ],
+  "ts-station-service": [],
+  "ts-contacts-service": [],
+  "ts-preserve-service": [
+   [
+    "ts-basic-service",
+    0.16666666666666666
+   ],
+   [
+    "ts-contacts-service",
+    0.16666666666666666
+   ],
+   [
+    "ts-order-service",
+    0.16666666666666666
+   ],
+   [
+    "ts-seat-service",
+    0.16666666666666666
+   ],
+   [
+    "ts-security-service",
+    0.16666666666666666
+   ],
+   [
+    "ts-travel-service",
+    0.16666666666666666
+   ]
+  ],
+  "ts-security-service": [
+   [
+    "ts-order-service",
+    1.0
+   ]
+  ]
+ }
+}
