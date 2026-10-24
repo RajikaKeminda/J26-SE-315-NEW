@@ -50,7 +50,10 @@ def file_sha256(path):
 
 
 def regime():
-    return {k: getattr(config, k) for k in REGIME_KEYS if hasattr(config, k)}
+    out = {k: getattr(config, k) for k in REGIME_KEYS if hasattr(config, k)}
+    if out.get("SIM_PARAMS_PATH"):                                  # stored relative to autoscaler/, never an absolute path of this machine
+        out["SIM_PARAMS_PATH"] = os.path.relpath(out["SIM_PARAMS_PATH"], config.BASE_DIR)
+    return out
 
 
 def topology_payload(t):
