@@ -11,7 +11,7 @@
  "STEP_SECONDS": 30.0,
  "MEM_DEFAULT_MB": 800,
  "MEM_QUANTUM_MB": 64,
- "SIM_PARAMS_PATH": "/Users/rajikakeminda/Documents/research/final/k8s-autoscaler-v2/autoscaler/src/simulation/sim_params_trainticket.json",
+ "SIM_PARAMS_PATH": "src/simulation/sim_params_trainticket.json",
  "INITIAL_REPLICAS": 1,
  "BUDGET_PER_SERVICE": 1.25,
  "ALLOW_MEMORY_RESIZE": false,

@@ -1,5 +1,7 @@
 """Persistence without a database: reason categories, the row builder, the writer thread (with the database calls replaced), the engine hook."""
 
+import json
+import os
 import time
 from datetime import datetime, timezone
 
@@ -409,3 +411,11 @@ def test_memory_can_be_locked_while_cpu_still_changes(monkeypatch):
     monkeypatch.setattr(config, "ALLOW_MEMORY_RESIZE", False)
     locked = decode_action(["a"], metrics, idx, cont)["a"]
     assert locked["cpu"] == free["cpu"] and locked["mem"] == 800.0 and locked["dr"] == free["dr"] == 1
+
+
+def test_the_stored_regime_holds_no_absolute_path_of_this_machine(monkeypatch):
+    from src.persistence import training
+    monkeypatch.setattr(config, "SIM_PARAMS_PATH", os.path.join(config.BASE_DIR, "src", "simulation", "sim_params_trainticket.json"))
+    r = training.regime()
+    assert r["SIM_PARAMS_PATH"] == os.path.join("src", "simulation", "sim_params_trainticket.json")
+    assert "/Users/" not in json.dumps(r) and r["STEP_SECONDS"] == config.STEP_SECONDS
