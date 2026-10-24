@@ -54,15 +54,29 @@ def build_topology_options(sizes, target, target_prob, val_sizes):
             "val_topologies": val}
 
 
-def main(arm, episodes, seed, demo_episodes, updates_per_episode, out=None, hp=None, init_from=None, topo_opts=None, curve_out=None):
+def main(arm, episodes, seed, demo_episodes, updates_per_episode, out=None, hp=None, init_from=None, topo_opts=None, curve_out=None,
+         record=None):
     torch.set_num_threads(1)           # tiny tensors: threading only adds overhead
     hp = hp or HParams()
     print(f"Training '{arm}' seed={seed} for {episodes} episodes  {ARMS[arm]}", flush=True)
-    agent, best_state, meta = train_agent(arm, episodes=episodes, seed=seed,
-                                          demo_episodes=demo_episodes,
-                                          updates_per_episode=updates_per_episode, hp=hp,
-                                          log=lambda *a: print(*a, flush=True), init_from=init_from,
-                                          **(topo_opts or {}))
+    recorder = None
+    if record is not None:                      # store the run, every episode and the learning curve in the database (src/persistence/training.py)
+        from src.persistence.training import TrainingRecorder
+        recorder = TrainingRecorder(config.DATABASE_URL, arm, seed, episodes, init_from, dataclasses.asdict(hp),
+                                    {k: (v if k != "target_topologies" and k != "val_topologies" else [t.name for t in (v or [])])
+                                     for k, v in (topo_opts or {}).items()},
+                                    cluster_name=record.get("cluster_name"), note=record.get("note"),
+                                    target_topologies=(topo_opts or {}).get("target_topologies") or ())
+    try:
+        agent, best_state, meta = train_agent(arm, episodes=episodes, seed=seed,
+                                              demo_episodes=demo_episodes,
+                                              updates_per_episode=updates_per_episode, hp=hp,
+                                              log=lambda *a: print(*a, flush=True), init_from=init_from,
+                                              recorder=recorder, **(topo_opts or {}))
+    except BaseException:
+        if recorder:
+            recorder.finish(status="failed")
+        raise
     meta["hparams"] = dataclasses.asdict(hp)
     path = out or checkpoint_path(arm, seed)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -73,6 +87,8 @@ def main(arm, episodes, seed, demo_episodes, updates_per_episode, out=None, hp=N
     os.makedirs(os.path.dirname(curve), exist_ok=True)
     with open(curve, "w") as f:
         json.dump(meta, f, indent=2)
+    if recorder:
+        recorder.finish(path, meta)
     print(f"Saved -> {path}   (best validation score {meta['best_val_scalarized']:.3f})")
     print(f"Learning curve -> {curve}")
 
@@ -94,6 +110,12 @@ if __name__ == "__main__":
     ap.add_argument("--target", nargs="*", default=[], help="named topologies mixed into training and validation, e.g. trainticket-sim")
     ap.add_argument("--target-prob", type=float, default=0.4, help="share of training episodes on the target topologies")
     ap.add_argument("--val-sizes", type=int, nargs="*", default=[], help="add random validation topologies of these sizes")
+    ap.add_argument("--record", action="store_true", help="store this run (settings, every episode, trajectories, learning curve) in the database; needs AUTOSCALER_DATABASE_URL")
+    ap.add_argument("--cluster-name", default=None, help="with --record: the cluster whose measurements the regime comes from")
+    ap.add_argument("--note", default=None, help="with --record: a free-text note kept with the run")
     a = ap.parse_args()
+    if a.record and not config.DATABASE_URL:
+        ap.error("--record needs AUTOSCALER_DATABASE_URL")
     main(a.arm, a.episodes, a.seed, a.demo_episodes, a.updates_per_episode, a.out, parse_hparams(a.hp), a.init_from,
-         build_topology_options(a.sizes, a.target, a.target_prob, a.val_sizes), a.curve_out)
+         build_topology_options(a.sizes, a.target, a.target_prob, a.val_sizes), a.curve_out,
+         {"cluster_name": a.cluster_name, "note": a.note} if a.record else None)

@@ -396,3 +396,16 @@ def test_the_replay_engine_accepts_frames_loaded_from_the_database():
     assert e.tick()["replay_length"] == 2
     with pytest.raises(ValueError, match="no recorded payloads"):
         ReplayEngine(None, frames=[])
+
+
+def test_memory_can_be_locked_while_cpu_still_changes(monkeypatch):
+    """ALLOW_MEMORY_RESIZE=0: the agent's CPU and replica outputs act, its memory output is ignored (in training and live alike)."""
+    import numpy as np
+    from src.rl_agent.env import decode_action
+    metrics = {"a": {"cpu": 0.3, "mem": 800.0}}
+    idx, cont = np.array([4]), np.array([[0.9, 0.9]], dtype=np.float32)
+    free = decode_action(["a"], metrics, idx, cont)["a"]
+    assert free["cpu"] > 0.3 and free["mem"] != 800.0
+    monkeypatch.setattr(config, "ALLOW_MEMORY_RESIZE", False)
+    locked = decode_action(["a"], metrics, idx, cont)["a"]
+    assert locked["cpu"] == free["cpu"] and locked["mem"] == 800.0 and locked["dr"] == free["dr"] == 1

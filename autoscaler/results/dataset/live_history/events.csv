@@ -1,0 +1,9 @@
+run_id,step,ts,type,severity,detail
+9037bb50-6828-4264-b511-fd3dd5187b48,,2026-10-24 16:52:57.614084+00:00,agent_stop,info,{}
+9037bb50-6828-4264-b511-fd3dd5187b48,,2026-10-24 16:39:09.731296+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+bc8bcf70-863a-4a36-bd6b-71be079cca6b,,2026-10-24 16:39:04.244758+00:00,agent_stop,info,{}
+bc8bcf70-863a-4a36-bd6b-71be079cca6b,,2026-10-24 16:31:16.447679+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
+a78c3337-97b9-4a01-af0c-3ed4b130a331,,2026-10-24 16:22:09.036735+00:00,agent_stop,info,{}
+a78c3337-97b9-4a01-af0c-3ed4b130a331,,2026-10-24 15:54:54.777809+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+033b7874-16df-4932-9e16-be79476d3ddf,,2026-10-24 15:54:49.996507+00:00,agent_stop,info,{}
+033b7874-16df-4932-9e16-be79476d3ddf,,2026-10-24 15:42:13.451814+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"

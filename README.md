@@ -47,6 +47,9 @@ separate machine; the controller on a laptop reaches it over SSH tunnels). **Sta
   capacity-limited). The value is the critical-path analysis, the multi-objective control and the safety layer, not a clear win over HPA.
 * **If the network fails:** `python -m src.dashboard.server --mode replay --replay autoscaler/results/replays/trainticket_run.jsonl` plays back a recorded live run, labelled as a replay.
 
+* **A model that scales replicas AND CPU, trained and run live with the data stored:** `mo_td3_trainticket_cpu` (fine-tuned from `mo_td3_large`, memory locked) raised the staged bottleneck `ts-order-service` from 1 pod / 300m to 2 pods / 1 core on the real cluster,
+  the gateway p95 fell from about 3.3 s to 0.9 s, and the resize cost about 80 s of that service (2.0 % of calls failed). It keeps that service at maximum at any load (no scale-down), so it is not a load-following controller. Every step of the training
+  and of the live runs is in the database. Commands and numbers: [`docs/RUN_LOG_TRAINTICKET_CPU.md`](docs/RUN_LOG_TRAINTICKET_CPU.md); all other commands: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
 * **History in PostgreSQL (opt-in):** with `AUTOSCALER_DATABASE_URL` set (`bash scripts/22_db_up.sh`) the agent stores its actions (proposed / approved / applied, with the reason a
   scale-up was blocked), per-service metrics (24 h), the critical-path analysis, SLO-violation episodes and events (90 days), separately for every cluster it is plugged into; the control
   room has a History panel and `python -m src.persistence.export` writes CSVs. Writing never blocks or fails the control loop. See [`docs/PERSISTENCE.md`](docs/PERSISTENCE.md).
@@ -293,7 +296,7 @@ What was actually executed (macOS arm64, 8 GB RAM, kind v0.27 / Kubernetes 1.32 
 
 | | status |
 |---|---|
-| 328 tests (`make test`): components, clients, engines, dashboard API, agent, training, evaluation, manifests, README sync, live-topology / critical-path / auto-discovery on recorded real traces, the history database (12 of them need PostgreSQL: `bash scripts/22_db_up.sh` and `TEST_DATABASE_URL`, otherwise skipped) | **passing**, pyflakes clean |
+| 328 tests (`make test`): components, clients, engines, dashboard API, agent, training, evaluation, manifests, README sync, live-topology / critical-path / auto-discovery on recorded real traces, the history database (14 of them need PostgreSQL: `bash scripts/22_db_up.sh` and `TEST_DATABASE_URL`, otherwise skipped) | **passing**, pyflakes clean |
 | `docker build` of both images, `docker compose config` | **run** (images built and loaded into kind) |
 | kind deployment, in-cluster autoscaler with RBAC, `scripts/14_e2e_smoke.sh` (open-loop traffic from inside the cluster → Prometheus real CPU/RSS/own-latency series + Jaeger traces → in-cluster **MO-TD3** acting) | **passed** |
 | Calibration load tests on the real cluster (36 measurements, 4 CPU limits) | **run**, committed in `calibration/` |

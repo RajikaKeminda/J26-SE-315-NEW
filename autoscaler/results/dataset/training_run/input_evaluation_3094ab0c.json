@@ -1,0 +1,229 @@
+{
+ "regime": {
+  "CPU_MAX": 1.0,
+  "MEM_MAX_MB": 1024,
+  "MAX_REPLICAS": 2,
+  "STEP_SECONDS": 30.0,
+  "POD_STARTUP_SECONDS": 95.0
+ },
+ "slo_ms": 370.0,
+ "episodes": 48,
+ "services": 11,
+ "topology": "trainticket-sim",
+ "controllers": {
+  "static": {
+   "mean_cost": 12.0725,
+   "by_pattern": {
+    "burst": {
+     "mean_cost": 12.0725,
+     "p95_latency": 4901.049312769294,
+     "slo_violation_rate": 1.0
+    },
+    "normal": {
+     "mean_cost": 12.0725,
+     "p95_latency": 573.7274900262393,
+     "slo_violation_rate": 1.0
+    },
+    "rampup": {
+     "mean_cost": 12.0725,
+     "p95_latency": 8757.579675763553,
+     "slo_violation_rate": 0.9624999999999999
+    },
+    "diurnal": {
+     "mean_cost": 12.0725,
+     "p95_latency": 7653.273780822469,
+     "slo_violation_rate": 0.7854166666666669
+    }
+   },
+   "scalarized": 0.6609065855542818,
+   "p95_latency": 5471.40756484539,
+   "mean_replicas": 11.0,
+   "adaptation_time_s": 581.25,
+   "slo_violation_rate": 0.9369791666666666
+  },
+  "threshold": {
+   "mean_cost": 12.60581640625,
+   "by_pattern": {
+    "burst": {
+     "mean_cost": 12.721854166666667,
+     "p95_latency": 3941.8344955631655,
+     "slo_violation_rate": 0.6999999999999998
+    },
+    "normal": {
+     "mean_cost": 12.0725,
+     "p95_latency": 573.7274900262393,
+     "slo_violation_rate": 1.0
+    },
+    "rampup": {
+     "mean_cost": 12.861328125000002,
+     "p95_latency": 1015.9866575314533,
+     "slo_violation_rate": 0.9624999999999999
+    },
+    "diurnal": {
+     "mean_cost": 12.767583333333334,
+     "p95_latency": 1032.6990587429414,
+     "slo_violation_rate": 0.7020833333333334
+    }
+   },
+   "scalarized": 0.6031136251986027,
+   "p95_latency": 1641.0619254659498,
+   "mean_replicas": 11.4859375,
+   "adaptation_time_s": 426.25,
+   "slo_violation_rate": 0.8411458333333334
+  },
+  "hpa (tuned)": {
+   "mean_cost": 13.135703125,
+   "by_pattern": {
+    "burst": {
+     "mean_cost": 13.169999999999996,
+     "p95_latency": 3287.2501505079035,
+     "slo_violation_rate": 0.39166666666666666
+    },
+    "normal": {
+     "mean_cost": 13.169999999999996,
+     "p95_latency": 343.48720113453254,
+     "slo_violation_rate": 0.08333333333333331
+    },
+    "rampup": {
+     "mean_cost": 13.149421875,
+     "p95_latency": 856.8766157952715,
+     "slo_violation_rate": 0.7916666666666666
+    },
+    "diurnal": {
+     "mean_cost": 13.053390625,
+     "p95_latency": 584.1876671542701,
+     "slo_violation_rate": 0.6583333333333333
+    }
+   },
+   "scalarized": 0.5092250549544891,
+   "p95_latency": 1267.9504086479944,
+   "mean_replicas": 11.96875,
+   "adaptation_time_s": 426.25,
+   "slo_violation_rate": 0.48125
+  },
+  "mo_td3_large": {
+   "mean_cost": 10.388327962239584,
+   "by_pattern": {
+    "burst": {
+     "mean_cost": 10.972442708333332,
+     "p95_latency": 3919.3096192106073,
+     "slo_violation_rate": 0.6208333333333333
+    },
+    "normal": {
+     "mean_cost": 9.980811197916667,
+     "p95_latency": 433.8370602867283,
+     "slo_violation_rate": 0.4395833333333334
+    },
+    "rampup": {
+     "mean_cost": 10.504488932291666,
+     "p95_latency": 982.6958687156548,
+     "slo_violation_rate": 0.9604166666666666
+    },
+    "diurnal": {
+     "mean_cost": 10.095569010416666,
+     "p95_latency": 734.882719690975,
+     "slo_violation_rate": 0.7604166666666666
+    }
+   },
+   "scalarized": 0.498769611120224,
+   "p95_latency": 1517.6813169759914,
+   "mean_replicas": 11.986458333333331,
+   "adaptation_time_s": 498.75,
+   "slo_violation_rate": 0.6953125
+  },
+  "hpa (default 60%)": {
+   "mean_cost": 13.026524739583332,
+   "by_pattern": {
+    "burst": {
+     "mean_cost": 13.099119791666666,
+     "p95_latency": 3305.733556760022,
+     "slo_violation_rate": 0.45625
+    },
+    "normal": {
+     "mean_cost": 13.115124999999999,
+     "p95_latency": 355.99003156445116,
+     "slo_violation_rate": 0.13541666666666669
+    },
+    "rampup": {
+     "mean_cost": 12.9505,
+     "p95_latency": 916.468416741401,
+     "slo_violation_rate": 0.9604166666666666
+    },
+    "diurnal": {
+     "mean_cost": 12.941354166666668,
+     "p95_latency": 731.3461083246879,
+     "slo_violation_rate": 0.6770833333333335
+    }
+   },
+   "scalarized": 0.5349686356882254,
+   "p95_latency": 1327.3845283476405,
+   "mean_replicas": 11.869270833333333,
+   "adaptation_time_s": 426.25,
+   "slo_violation_rate": 0.5572916666666666
+  },
+  "mo_td3_trainticket_cpu": {
+   "mean_cost": 9.725985351562501,
+   "by_pattern": {
+    "burst": {
+     "mean_cost": 11.156695963541667,
+     "p95_latency": 3294.379367577043,
+     "slo_violation_rate": 0.39166666666666666
+    },
+    "normal": {
+     "mean_cost": 9.332788411458333,
+     "p95_latency": 346.59034701194946,
+     "slo_violation_rate": 0.08541666666666665
+    },
+    "rampup": {
+     "mean_cost": 9.247116536458334,
+     "p95_latency": 863.4656674432696,
+     "slo_violation_rate": 0.7875000000000001
+    },
+    "diurnal": {
+     "mean_cost": 9.167340494791665,
+     "p95_latency": 598.7833912022076,
+     "slo_violation_rate": 0.6625
+    }
+   },
+   "scalarized": 0.4227438997477293,
+   "p95_latency": 1275.8046933086177,
+   "mean_replicas": 12.535937499999998,
+   "adaptation_time_s": 427.5,
+   "slo_violation_rate": 0.4817708333333333
+  },
+  "mo_td3_trainticket_cap6": {
+   "mean_cost": 13.196948242187501,
+   "by_pattern": {
+    "burst": {
+     "mean_cost": 13.209570312499999,
+     "p95_latency": 3295.7918697437804,
+     "slo_violation_rate": 0.42500000000000004
+    },
+    "normal": {
+     "mean_cost": 13.20498046875,
+     "p95_latency": 355.5853874497475,
+     "slo_violation_rate": 0.12916666666666668
+    },
+    "rampup": {
+     "mean_cost": 13.21875,
+     "p95_latency": 854.0691432029626,
+     "slo_violation_rate": 0.7729166666666667
+    },
+    "diurnal": {
+     "mean_cost": 13.154492187499997,
+     "p95_latency": 578.1615930345052,
+     "slo_violation_rate": 0.6166666666666666
+    }
+   },
+   "scalarized": 0.5127963821093241,
+   "p95_latency": 1270.901998357749,
+   "mean_replicas": 11.980208333333332,
+   "adaptation_time_s": 443.125,
+   "slo_violation_rate": 0.4859374999999999
+  }
+ },
+ "hpa_tuned_params": {
+  "cpu": 1.0,
+  "target": 0.3
+ }
+}

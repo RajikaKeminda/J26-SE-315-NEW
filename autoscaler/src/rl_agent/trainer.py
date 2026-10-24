@@ -176,10 +176,11 @@ def select_checkpoint(agent, candidates, w, n_episodes, seed0=60_000, topologies
 
 def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, warmup_episodes=30,
                 updates_per_episode=30, batch_size=None, val_every=50, verbose=True, log=print, hp=None,
-                init_from=None, sizes=(4, 12), target_topologies=None, target_prob=0.0, val_topologies=None):
+                init_from=None, sizes=(4, 12), target_topologies=None, target_prob=0.0, val_topologies=None, recorder=None):
     """`init_from`: warm-start from a checkpoint (fine-tuning). `sizes`: service-count range of the random training
     topologies. `target_topologies` (with probability `target_prob` per episode) are mixed into training, and
-    `val_topologies` replace the 6-service demo as the validation set - together they specialise a trained agent."""
+    `val_topologies` replace the 6-service demo as the validation set - together they specialise a trained agent.
+    `recorder` (persistence.training.TrainingRecorder) stores every episode and the validation curve in the database."""
     hp = hp or HParams()
     opts = ARMS[arm]
     batch_size = batch_size or hp.batch_size
@@ -231,6 +232,8 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
             topo = target_topologies[int(rng.integers(len(target_topologies)))]
         obs_list, idx_list, cont_list, rew = run_collect(env, policy_fn, topology=topo)
         replay.add_episode(obs_list, idx_list, cont_list, rew, w=w, demo=False)
+        if recorder is not None:
+            recorder.on_episode(ep, env, w, obs_list, idx_list, cont_list, rew)
 
         if ep >= warmup_episodes:
             bc_w = (hp.bc_weight * max(hp.bc_floor, 1.0 - frac / hp.bc_decay_frac)) if opts["demos"] else 0.0
@@ -249,6 +252,8 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
                      "val_cost": v["mean_cost"], "val_slo_violation": v["slo_violation_rate"],
                      "seconds": round(time.time() - t0, 1), **{k: round(x, 4) for k, x in last_info.items()}}
             history.append(entry)
+            if recorder is not None:
+                recorder.on_validation(entry)
             if v["scalarized"] < best:
                 best = v["scalarized"]
             kept.append((v["scalarized"], agent.state()))

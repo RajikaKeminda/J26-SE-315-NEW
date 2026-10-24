@@ -276,3 +276,17 @@ def test_scale_down_feature_covers_the_longest_blocking_rule(monkeypatch):
     cur = {"a": {"replicas": 2, "cpu": 0.5, "mem": 256.0, "mem_utilization": 0.3}}
     g.filter({"a": {"dr": 1, "cpu": 0.5, "mem": 256.0}}, cur, step=0)
     assert g.readiness(5)["a"][1] == pytest.approx(0.5)          # still blocked for 5 more steps of the 10, not "ready" after 3
+
+
+def test_a_locked_memory_is_left_exactly_as_it_is_not_rounded_to_the_grid(monkeypatch):
+    """With ALLOW_MEMORY_RESIZE=0 a CPU resize used to carry the memory rounded to the memory grid (on Train-Ticket 800 -> 768 MiB): a change nobody asked for."""
+    from src import config
+    from src.safety.guards import SafetyGuard
+    cur = {"s": {"replicas": 1, "cpu": 0.3, "mem": 200.0, "utilization": 0.9, "mem_utilization": 0.4, "ready_replicas": 1}}
+    prop = {"s": {"dr": 0, "cpu": 1.0, "mem": 200.0}}
+    monkeypatch.setattr(config, "ALLOW_MEMORY_RESIZE", False)
+    approved, _ = SafetyGuard(services=["s"], budget=float("inf")).filter(prop, cur, step=100)
+    assert approved["s"]["cpu"] == 1.0 and approved["s"]["mem"] == 200.0
+    monkeypatch.setattr(config, "ALLOW_MEMORY_RESIZE", True)
+    approved, _ = SafetyGuard(services=["s"], budget=float("inf")).filter(prop, cur, step=100)
+    assert approved["s"]["mem"] == 192.0, "unlocked, memory still snaps to its 32 MiB grid (unchanged behaviour)"

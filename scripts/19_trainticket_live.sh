@@ -6,6 +6,12 @@
 #   bash scripts/19_trainticket_live.sh act             # really scale (replicas only, see profiles/trainticket.env)
 #   CONTROLLED_SERVICES=ts-order-service,ts-seat-service bash scripts/19_trainticket_live.sh act
 #
+# Options (environment variables):
+#   ARM=mo_td3_trainticket_cpu     which checkpoint in autoscaler/models (default: the serving default; set it explicitly)
+#   SLO_MS=3000                    absolute p95 target in ms (without it: a depth-based formula)
+#   RESIZE=cpu | all               allow CPU changes (memory stays fixed) / CPU and memory; default none (replicas only). A resize restarts the pod.
+#   NODE_RESERVE_MB=600            memory the node must keep free after a scale-up (profile: 768)
+#
 # History: with AUTOSCALER_DATABASE_URL set (bash scripts/22_db_up.sh prints it) everything the agent sees and does is stored, per
 # cluster; AUTOSCALER_CLUSTER_NAME names this cluster (default: the cluster name in the kubeconfig).
 
@@ -15,6 +21,10 @@ cd "$(dirname "$0")/.."
 MODE="${1:-shadow}"; PORT="${2:-8080}"
 KUBECONFIG="${KUBECONFIG:-$HOME/.kube/tt-agent-config}"; export KUBECONFIG
 set -a; source profiles/trainticket.env; set +a
+case "${RESIZE:-}" in cpu) export ALLOW_RESIZE=1 ALLOW_MEMORY_RESIZE=0;; all) export ALLOW_RESIZE=1;; "") ;; *) echo "RESIZE must be cpu or all"; exit 2;; esac
+[ -n "$SLO_MS" ] && export SLO_LATENCY_MS="$SLO_MS"
+[ -n "$NODE_RESERVE_MB" ] && export NODE_MEMORY_RESERVE_MB="$NODE_RESERVE_MB"
+[ -n "$ARM" ] && ARGS_ARM=(--arm "$ARM") || ARGS_ARM=()
 export AUTOSCALER_CLUSTER_NAME="${AUTOSCALER_CLUSTER_NAME:-$(kubectl config view --minify -o jsonpath='{.clusters[0].name}' 2>/dev/null)}"
 [ -f .venv/bin/activate ] && source .venv/bin/activate
 
@@ -54,4 +64,5 @@ if [ "$MODE" = "act" ]; then
 else
   ARGS+=(--shadow); echo; echo "SHADOW mode: nothing will be changed."
 fi
-cd autoscaler && exec python -m src.dashboard.server "${ARGS[@]}"
+echo "model: ${ARM:-default checkpoint}   resize: ${RESIZE:-none (replicas only)}   SLO: ${SLO_LATENCY_MS:-formula}   controlled: ${CONTROLLED_SERVICES:-ALL}"
+cd autoscaler && exec python -m src.dashboard.server "${ARGS[@]}" "${ARGS_ARM[@]}"
