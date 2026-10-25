@@ -315,3 +315,24 @@ def test_demand_gate_adds_capacity_only_where_the_load_is(monkeypatch):
     monkeypatch.setattr(config, "SCALE_DOWN_MAX_UTIL", 1.01)
     off, _ = SafetyGuard(services=["s"], budget=float("inf")).filter(grow, cur(0.05), step=100)
     assert off["s"]["dr"] > 0, "off by default: the shipped results do not change"
+
+
+def test_a_resize_that_restarts_pods_is_limited_to_one_service_per_step_and_never_shrinks(monkeypatch):
+    from src import config
+    from src.safety.guards import SafetyGuard
+    cur = {s: {"replicas": 1, "cpu": 1.0, "mem": 200.0, "utilization": u, "mem_utilization": 0.3, "ready_replicas": 1}
+           for s, u in (("a", 0.9), ("b", 0.2), ("c", 0.1))}
+    prop = {s: {"dr": 0, "cpu": 0.5, "mem": 200.0} for s in cur}                     # everyone wants a smaller CPU limit
+    free, _ = SafetyGuard(services=list(cur), budget=float("inf")).filter(prop, cur, step=100)
+    assert all(free[s]["cpu"] < 1.0 for s in ("b", "c")), "unrestricted: idle services are shrunk"
+    monkeypatch.setattr(config, "ALLOW_CPU_DECREASE", False)
+    kept, reasons = SafetyGuard(services=list(cur), budget=float("inf")).filter(prop, cur, step=100)
+    assert all(kept[s]["cpu"] == 1.0 for s in cur) and all("cpu decrease disabled" in reasons[s] for s in cur)
+    monkeypatch.setattr(config, "ALLOW_CPU_DECREASE", True)
+    monkeypatch.setattr(config, "MAX_RESIZES_PER_STEP", 1)
+    grow = {s: {"dr": 0, "cpu": 0.3, "mem": 200.0} for s in cur}
+    cur2 = {s: dict(v, cpu=0.1, utilization=u) for (s, v), u in zip(cur.items(), (0.9, 0.95, 0.8))}
+    one, reasons = SafetyGuard(services=list(cur), budget=float("inf")).filter({s: dict(p, cpu=0.6) for s, p in grow.items()}, cur2, step=100)
+    changed = [s for s in cur if one[s]["cpu"] != 0.1]
+    assert changed == ["b"], "only the busiest service is resized"
+    assert all("resize limit" in reasons[s] for s in ("a", "c"))

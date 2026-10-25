@@ -175,6 +175,11 @@ TD3_REPLAY_EPISODES = 4000
 # Off by default (0 / 1.01), so the shipped simulator results stay valid; the Train-Ticket profile switches it on.
 SCALE_UP_MIN_UTIL = _env_float("SCALE_UP_MIN_UTIL", 0.0)
 SCALE_DOWN_MAX_UTIL = _env_float("SCALE_DOWN_MAX_UTIL", 1.01)
+# Resize safety on clusters where a resize restarts the pod (and the service is down meanwhile, as with a Recreate rollout):
+# ALLOW_CPU_DECREASE=0 never shrinks a CPU limit (replicas may still be removed - that restarts nothing); MAX_RESIZES_PER_STEP=N lets at most N services be resized
+# in one step (the busiest first), so the agent can never restart half the application at once. Defaults: no restriction (the shipped results do not change).
+ALLOW_CPU_DECREASE = os.environ.get("ALLOW_CPU_DECREASE", "1") == "1"
+MAX_RESIZES_PER_STEP = _env_int("MAX_RESIZES_PER_STEP", 0)
 SCALE_DOWN_COOLDOWN_STEPS = _env_int("SCALE_DOWN_COOLDOWN_STEPS", 3)
 # Stabilisation window AFTER a scale-up (0 = off, which keeps the simulated results and the trained models exactly as shipped).
 # The live Train-Ticket profile turns it on: a JVM pod needs minutes to start, so undoing a scale-up within that time wastes it.
