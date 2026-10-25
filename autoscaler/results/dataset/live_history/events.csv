@@ -1,4 +1,14 @@
 run_id,step,ts,type,severity,detail
+d0dbc6fe-480b-466a-bc31-7023f201cddb,,2026-10-25 07:53:57.080732+00:00,agent_stop,info,{}
+d0dbc6fe-480b-466a-bc31-7023f201cddb,10,2026-10-25 07:28:33.937777+00:00,breaker_closed,info,"{""p95_ms"": 270.3, ""slo_ms"": 3000.0}"
+d0dbc6fe-480b-466a-bc31-7023f201cddb,9,2026-10-25 07:28:02.496207+00:00,breaker_open,warning,"{""p95_ms"": 3074.9, ""slo_ms"": 3000.0}"
+d0dbc6fe-480b-466a-bc31-7023f201cddb,,2026-10-25 07:23:18.521286+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+8358c661-a45a-470a-b08d-aa914d387d06,,2026-10-25 07:16:07.641864+00:00,agent_stop,info,{}
+8358c661-a45a-470a-b08d-aa914d387d06,,2026-10-25 07:14:53.728359+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+602570b0-bbd9-4e23-8935-afa6775a9955,,2026-10-25 04:13:50.364911+00:00,agent_stop,info,{}
+602570b0-bbd9-4e23-8935-afa6775a9955,,2026-10-25 03:49:34.279533+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
+9a23e113-5725-4f44-851f-291f145131f1,,2026-10-25 03:25:25.364344+00:00,agent_stop,info,{}
+9a23e113-5725-4f44-851f-291f145131f1,,2026-10-25 03:23:33.772707+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
 9037bb50-6828-4264-b511-fd3dd5187b48,,2026-10-24 16:52:57.614084+00:00,agent_stop,info,{}
 9037bb50-6828-4264-b511-fd3dd5187b48,,2026-10-24 16:39:09.731296+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
 bc8bcf70-863a-4a36-bd6b-71be079cca6b,,2026-10-24 16:39:04.244758+00:00,agent_stop,info,{}

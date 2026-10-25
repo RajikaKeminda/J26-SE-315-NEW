@@ -13,6 +13,8 @@ _RULES = [
     ("clamp", r"clamped replicas"),
     ("no_demand", r"scale-up blocked: no demand"),
     ("busy", r"scale-down blocked: service is busy"),
+    ("cpu_decrease_disabled", r"cpu decrease disabled"),
+    ("resize_limit", r"resize limit"),
     ("memory_floor", r"memory floor"),
     ("cooldown", r"scale-down cooldown"),
     ("stabilisation", r"scale-down blocked after a scale-up"),

@@ -135,6 +135,39 @@ $K get deploy ts-order-service -o jsonpath='{.spec.replicas} {.status.readyRepli
 **Say out loud what this does not prove:** the agent proposes the maximum for this service at *every* load and never scales down - it is not a load-following controller; only one service was controlled; the test account's order history keeps growing and slows
 `order/refresh` and `preserve` by itself, so absolute latencies drift between days.
 
+## Part 5B - the bottleneck moves: the agent finds it wherever it is (10 min, no PC needed)
+The panel's question: "make another service the bottleneck". On the local kind cluster any of the 6 demo services can be (`docs/BOTTLENECK_RESULTS.md`, section 4). With nothing else heavy running:
+```bash
+bash scripts/25_bottleneck_demo_kind.sh reset                 # all six services: 2 pods x 0.25 core
+bash scripts/25_bottleneck_demo_kind.sh forward               # Prometheus 19090, Jaeger 16687 (do not clash with the Train-Ticket tunnels)
+bash scripts/25_bottleneck_demo_kind.sh load 12 900           # terminal 2: 12 req/s for 15 minutes, generated inside the cluster
+AUTOSCALER_DATABASE_URL=postgresql://autoscaler:autoscaler-local@127.0.0.1:5432/autoscaler \
+  bash scripts/25_bottleneck_demo_kind.sh agent               # terminal 3: the agent (mo_td3_bn), acting, http://localhost:8090
+bash scripts/25_bottleneck_demo_kind.sh stage pricing-service # after 1-2 minutes: that service gets 1 pod and 0.025 core -> saturated
+watch -n 5 bash scripts/25_bottleneck_demo_kind.sh status     # terminal 4: the agent adds pods / CPU to pricing-service within seconds
+bash scripts/25_bottleneck_demo_kind.sh stage inventory-service   # then a different service: it moves there
+bash scripts/25_bottleneck_demo_kind.sh stage user-service
+bash scripts/25_bottleneck_demo_kind.sh reset                 # afterwards (and stop the agent and the load)
+```
+Run exactly **one** load generator (start another and the demo app drowns; the load pod can be inspected with `kubectl exec loadgen -n autoscaler-poc -- ps`). Show the dashboard (Live tab: the saturated service's ring turns red, then the decision feed
+shows the capacity added there and not elsewhere) and `psql`: `select ts::time(0), replicas, ready, cpu_limit, round(cpu_util::numeric,2) from service_metrics where service='pricing-service' order by ts desc limit 25`.
+
+## Part 5C - the same on the real Train-Ticket (30 min, PC session needed)
+Two real bottlenecks, one after the other, with all 12 services controlled (see `docs/BOTTLENECK_RESULTS.md`, section 5): `ts-order-service` staged at 300m, then `ts-order-other-service` cut to 200m while the load runs.
+```bash
+bash scripts/21_tt_demo_bottleneck.sh create 300m                       # bottleneck 1 (wait for 1/1)
+CS=ts-gateway-service,ts-basic-service,ts-contacts-service,ts-order-service,ts-order-other-service,ts-preserve-service,ts-route-service,ts-seat-service,ts-security-service,ts-station-service,ts-train-service,ts-travel-service
+AUTOSCALER_DATABASE_URL=... AUTOSCALER_CLUSTER_NAME=train-ticket ARM=mo_td3_trainticket_cpu RESIZE=cpu SLO_MS=3000 CONTROLLED_SERVICES=$CS NODE_RESERVE_MB=600 \
+  bash scripts/19_trainticket_live.sh act                               # idle: it changes nothing (show the decision feed: "no demand")
+# PC: load, 3 users, normal mix, 26 minutes (watchdog allowing churn of both order services):
+#   powershell -NoProfile -ExecutionPolicy Bypass -File "D:\train ticket\ts-calibrate.ps1" -LevelList 3 -Seconds 1560 -Think 1.0 -Mix normal -CoolDownSeconds 0 -MaxCalmWaitSeconds 90 -AllowChurnPattern "/ts-order-(other-)?service-" -Json "D:\train ticket\demo-results.json" -Samples "D:\train ticket\demo-samples.csv"
+# about 50 s after the load starts the agent raises ts-order-service (1 core, 2 pods). After ~9 minutes make the SECOND bottleneck:
+kubectl --kubeconfig ~/.kube/tt-agent-config patch deploy ts-order-other-service --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/cpu","value":"200m"}]'
+# ~2 minutes later the agent raises ts-order-other-service (it is untraced: the agent sees only its CPU) and leaves ts-order-service alone.
+```
+Restore both afterwards: `bash scripts/21_tt_demo_bottleneck.sh restore`, `kubectl --kubeconfig ~/.kube/tt-agent-config scale deploy ts-order-service --replicas=1`, and patch `ts-order-other-service` back to 1 core. Safety in this profile: the agent never shrinks a CPU limit and
+resizes at most one service per step; without that it once restarted ten services at once on an idle cluster.
+
 ## Part 6 - history and the dataset (4 min)
 Analysis tab -> **History**: cluster selector, p95 against the SLO with violation bands and scale markers, the actions table, critical-path changes. Then:
 ```bash

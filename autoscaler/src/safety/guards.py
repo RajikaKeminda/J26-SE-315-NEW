@@ -135,6 +135,10 @@ class SafetyGuard:
                     notes.append(f"scale-down blocked: service is busy (utilisation {util:.2f} > {config.SCALE_DOWN_MAX_UTIL:.2f})")
                     a["dr"], a["cpu"] = max(a["dr"], 0), max(a["cpu"], cur["cpu"])
 
+                if not config.ALLOW_CPU_DECREASE and a["cpu"] < cur["cpu"] - 1e-9:
+                    notes.append("cpu decrease disabled (ALLOW_CPU_DECREASE=0)")
+                    a["cpu"] = cur["cpu"]
+
                 # 3. asymmetric scale-down --------------------------------------
                 if a["dr"] < 0:
                     since = step - self._last_scale_down_step.get(svc, -999)
@@ -169,6 +173,7 @@ class SafetyGuard:
 
         # 5. cluster budget -------------------------------------------------------
         self._enforce_budget(approved, current, reasons)
+        self._limit_resizes(approved, current, reasons)
 
         # bookkeeping only for what actually goes through (a caller that vetoes an action afterwards calls revoke())
         self._undo = {}
@@ -183,6 +188,16 @@ class SafetyGuard:
             if a["cpu"] != cur["cpu"] or a["mem"] != cur["mem"]:
                 self._last_resize_step[svc] = step
         return approved, reasons
+
+    def _limit_resizes(self, approved, current, reasons):
+        """At most MAX_RESIZES_PER_STEP services are resized in one step - the busiest first - so a resize that restarts pods can never hit many services at once."""
+        limit = config.MAX_RESIZES_PER_STEP
+        if limit <= 0:
+            return
+        resized = [s for s, a in approved.items() if abs(a["cpu"] - current[s]["cpu"]) > 1e-9 or abs(a["mem"] - current[s]["mem"]) > 1e-9]
+        for s in sorted(resized, key=lambda x: -current[x].get("utilization", 0.0))[limit:]:
+            approved[s]["cpu"], approved[s]["mem"] = current[s]["cpu"], current[s]["mem"]
+            reasons[s] = (reasons[s] + "; " if s in reasons else "") + f"resize limit: at most {limit} per step"
 
     def revoke(self, svc: str, scale: bool = False, resize: bool = False):
         """Undo the bookkeeping of the last filter() for `svc`: the action the guard approved was vetoed by the caller (node

@@ -226,6 +226,15 @@ python -m src.persistence.training summary                       # the stored ru
 The script sets `ALLOW_MEMORY_RESIZE=0` (the agent learns replicas and CPU, never memory), starts from `models/mo_td3_large.pt`, mixes the measured Train-Ticket topology into
 70 % of the episodes, and stores the run (`--record`, section 9). Compare it afterwards with `python -m src.evaluation.regime_eval` as in Recipe C step 5.
 
+### Recipe E - bottleneck-aware (the agent must find WHERE the load is)
+
+```bash
+bash scripts/24_train_bottleneck_aware.sh                                          # demo regime, from mo_td3_full -> models/mo_td3_bn.pt (about 30 min)
+REGIME=trainticket FROM=models/mo_td3_bn.pt OUT=mo_td3_bn_tt SCALE_UP_MIN_UTIL=0.5 SCALE_DOWN_MAX_UTIL=0.5 bash scripts/24_train_bottleneck_aware.sh
+cd autoscaler && SCALE_UP_MIN_UTIL=0.5 SCALE_DOWN_MAX_UTIL=0.5 ALLOW_MEMORY_RESIZE=0 python -m src.evaluation.bottleneck_eval --topology demo6 --agent bn=models/mo_td3_bn.pt --agent full=models/mo_td3_full.pt
+```
+In `hot_prob` (default 0.7 in the script) of the episodes one random service is made the only bottleneck (`topologies.bottleneck_scenario`); validation uses a scenario per service (`--hot-val`). Results: `docs/BOTTLENECK_RESULTS.md`.
+
 ### Recipe C - for your own cluster
 
 1. **Run the agent in shadow mode with load** (section 7) to produce `profiles/auto-<ns>.env`: pod start-up time, step length, bounds, replica cap, budget.
@@ -492,6 +501,8 @@ Environment variables (`autoscaler/src/config.py`); the launcher scripts set mos
 | `SLO_LATENCY_MS` | formula | absolute p95 target |
 | `BUDGET_PER_SERVICE`, `CLUSTER_BUDGET_CORES` | 1.0, none | cost budget; with many observed services leave `CLUSTER_BUDGET_CORES` unset |
 | `ALLOW_RESIZE` | `1` (`0` in generated profiles) | allow CPU/memory changes (pod restarts) |
+| `SCALE_UP_MIN_UTIL`, `SCALE_DOWN_MAX_UTIL` | `0`, `1.01` (off; `0.5`, `0.5` in the Train-Ticket profile) | demand gate: capacity is added only to a service whose CPU utilisation is at least the first, removed only from one at most the second |
+| `ALLOW_CPU_DECREASE`, `MAX_RESIZES_PER_STEP` | `1`, `0` (no limit; `0` and `1` in the Train-Ticket profile) | never shrink a CPU limit; at most this many services resized per step (the busiest first) |
 | `ALLOW_MEMORY_RESIZE` | `1` | `0` = CPU may change but memory never does (in training and live) |
 | `NODE_MEMORY_RESERVE_MB` | 768 | memory the node must keep free after a scale-up |
 | `SCALE_DOWN_AFTER_UP_STEPS` | 0 | stabilisation window after a scale-up (10 in the Train-Ticket profile) |
