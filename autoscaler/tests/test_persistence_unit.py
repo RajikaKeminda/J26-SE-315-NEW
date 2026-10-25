@@ -419,3 +419,12 @@ def test_the_stored_regime_holds_no_absolute_path_of_this_machine(monkeypatch):
     r = training.regime()
     assert r["SIM_PARAMS_PATH"] == os.path.join("src", "simulation", "sim_params_trainticket.json")
     assert "/Users/" not in json.dumps(r) and r["STEP_SECONDS"] == config.STEP_SECONDS
+
+
+def test_an_open_violation_is_closed_when_the_run_ends():
+    rec = rows.StepRecorder()
+    rec.rows(_payload(step=0, slo_breached=True, e2e={"p95_ms": 900.0, "mean_ms": 0, "p50_ms": 0, "p99_ms": 0, "error_rate": 0}))
+    rec.rows(_payload(step=1, slo_breached=True, e2e={"p95_ms": 950.0, "mean_ms": 0, "p50_ms": 0, "p99_ms": 0, "error_rate": 0}))
+    closed = rec.finish()["violations"][0]
+    assert closed[0] == 0 and closed[3] == 1 and closed[2] is not None and closed[4] == 2 and closed[5] == 950.0 and closed[6] == 500.0
+    assert rec.finish() == {}, "nothing left open"
