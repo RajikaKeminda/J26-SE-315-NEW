@@ -212,3 +212,42 @@ def test_works_on_random_topologies_without_blowing_up():
         for rps in (3.0, 60.0, 400.0):
             m = sim.step(rps)
             assert np.isfinite(m["__e2e__"]["p95_ms"])
+
+
+def test_hot_variant_turns_exactly_one_service_into_the_bottleneck():
+    import numpy as np
+    from src.topologies import TRAINTICKET_SIM as T, hot_variant, visit_ratios
+    ratio = visit_ratios(T)
+    assert ratio[T.entry] == 1.0 and ratio["ts-order-service"] > 0.3 and abs(ratio["ts-gateway-service"] - 1.0) < 1e-9
+    seen = set()
+    for seed in range(40):
+        topo, hot = hot_variant(T, np.random.default_rng(seed), 13.0, (0.7, 1.6))
+        seen.add(hot)
+        changed = [s for s in T.services if abs(topo.work(s) - T.work(s)) > 1e-9]
+        assert changed in ([hot], []), "only the hot service changes (or nothing, when it is already that heavy)"
+        assert hot != T.entry and topo.name.endswith(hot)
+        assert topo.work(hot) >= T.work(hot) and topo.work(hot) <= 8.0 * T.work(hot) + 1e-9
+        if changed:
+            demand = 13.0 * ratio[hot] * topo.work(hot) / 1000.0
+            assert 0.7 - 1e-6 <= demand <= 1.6 + 1e-6 or topo.work(hot) >= 8.0 * T.work(hot) - 1e-9    # needs 0.7-1.6 cores, unless capped
+    assert len(seen) >= 6, "a different service is chosen each time"
+
+
+def test_bottleneck_scenario_makes_one_service_the_only_saturated_one():
+    import numpy as np
+    from src.rl_agent.env import AutoscalerEnv, topology_base_rps
+    from src.topologies import DEMO6, bottleneck_scenario, shift_mix, visit_ratios
+    base = topology_base_rps(DEMO6)
+    shifted = shift_mix(DEMO6, "pricing-service", 4.0)
+    assert visit_ratios(shifted)["pricing-service"] > visit_ratios(DEMO6)["pricing-service"] * 1.5
+    assert all(abs(sum(w for _, w in t) - 1.0) < 1e-9 for t in shifted.call_graph.values() if t), "shares still sum to 1"
+    for hot in DEMO6.services:
+        topo, h = bottleneck_scenario(DEMO6, np.random.default_rng(0), base, hot=hot)
+        assert topo is not None and h == hot and topo.initial_cpu == {hot: 0.1} and topo.load_scale >= 1.0
+        env = AutoscalerEnv(topology=topo, seed=0)
+        obs = env.reset("normal", topology=topo)
+        util = {s: m["utilization"] for s, m in obs["metrics"].items()}
+        assert util[hot] >= 0.99, f"{hot} must start saturated, got {util[hot]}"
+        assert max(v for s, v in util.items() if s != hot) < 0.9, f"no other service may saturate: {util}"
+    infeasible, _ = bottleneck_scenario(DEMO6, np.random.default_rng(0), base, hot="pricing-service", max_scale=1.0, demand_range=(50.0, 60.0))
+    assert infeasible is None

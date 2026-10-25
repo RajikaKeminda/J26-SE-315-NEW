@@ -170,6 +170,11 @@ TD3_REPLAY_EPISODES = 4000
 # ---------------------------------------------------------------------------
 # Scaling DOWN is slower than UP, and never right after a scale-UP (a stabilisation window). Counted in control steps; it must
 # outlast a pod's start-up (about 4 s for the demo app, 95-240 s for Train-Ticket's JVMs).
+# Demand gate (safety/guards.py): the agent may ADD capacity (replicas or CPU) only to a service that is busy (CPU utilisation >= SCALE_UP_MIN_UTIL), and may
+# REMOVE capacity only from a service that is not (utilisation <= SCALE_DOWN_MAX_UTIL). It ties every action to where the load really is, like an HPA's target.
+# Off by default (0 / 1.01), so the shipped simulator results stay valid; the Train-Ticket profile switches it on.
+SCALE_UP_MIN_UTIL = _env_float("SCALE_UP_MIN_UTIL", 0.0)
+SCALE_DOWN_MAX_UTIL = _env_float("SCALE_DOWN_MAX_UTIL", 1.01)
 SCALE_DOWN_COOLDOWN_STEPS = _env_int("SCALE_DOWN_COOLDOWN_STEPS", 3)
 # Stabilisation window AFTER a scale-up (0 = off, which keeps the simulated results and the trained models exactly as shipped).
 # The live Train-Ticket profile turns it on: a JVM pod needs minutes to start, so undoing a scale-up within that time wastes it.

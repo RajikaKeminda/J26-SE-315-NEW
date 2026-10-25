@@ -290,3 +290,28 @@ def test_a_locked_memory_is_left_exactly_as_it_is_not_rounded_to_the_grid(monkey
     monkeypatch.setattr(config, "ALLOW_MEMORY_RESIZE", True)
     approved, _ = SafetyGuard(services=["s"], budget=float("inf")).filter(prop, cur, step=100)
     assert approved["s"]["mem"] == 192.0, "unlocked, memory still snaps to its 32 MiB grid (unchanged behaviour)"
+
+
+def test_demand_gate_adds_capacity_only_where_the_load_is(monkeypatch):
+    """SCALE_UP_MIN_UTIL / SCALE_DOWN_MAX_UTIL: an idle service gets no replica and no CPU increase, a busy one is not shrunk, a saturated one may grow."""
+    from src import config
+    from src.safety.guards import SafetyGuard
+    monkeypatch.setattr(config, "SCALE_UP_MIN_UTIL", 0.5)
+    monkeypatch.setattr(config, "SCALE_DOWN_MAX_UTIL", 0.5)
+
+    def cur(util):
+        return {"s": {"replicas": 1, "cpu": 0.3, "mem": 200.0, "utilization": util, "mem_utilization": 0.3, "ready_replicas": 1}}
+    grow = {"s": {"dr": 2, "cpu": 1.0, "mem": 200.0}}
+    shrink = {"s": {"dr": -1, "cpu": 0.1, "mem": 200.0}}
+    idle, reasons = SafetyGuard(services=["s"], budget=float("inf")).filter(grow, cur(0.05), step=100)
+    assert idle["s"]["dr"] == 0 and idle["s"]["cpu"] == 0.3 and "no demand" in reasons["s"]
+    busy, _ = SafetyGuard(services=["s"], budget=float("inf")).filter(grow, cur(0.95), step=100)
+    assert busy["s"]["dr"] > 0 and busy["s"]["cpu"] > 0.3
+    kept, reasons = SafetyGuard(services=["s"], budget=float("inf")).filter(shrink, cur(0.95), step=100)
+    assert kept["s"]["dr"] == 0 and kept["s"]["cpu"] == 0.3 and "busy" in reasons["s"]
+    freed, _ = SafetyGuard(services=["s"], budget=float("inf")).filter(shrink, cur(0.1), step=100)
+    assert freed["s"]["cpu"] < 0.3
+    monkeypatch.setattr(config, "SCALE_UP_MIN_UTIL", 0.0)
+    monkeypatch.setattr(config, "SCALE_DOWN_MAX_UTIL", 1.01)
+    off, _ = SafetyGuard(services=["s"], budget=float("inf")).filter(grow, cur(0.05), step=100)
+    assert off["s"]["dr"] > 0, "off by default: the shipped results do not change"

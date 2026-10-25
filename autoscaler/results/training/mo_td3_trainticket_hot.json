@@ -1,0 +1,230 @@
+{
+  "arm": "mo_td3_full",
+  "seed": 21,
+  "episodes": 800,
+  "history": [
+    {
+      "episode": 50,
+      "val_scalarized": 0.5036746561527252,
+      "val_p95_ms": 2070.8511805640906,
+      "val_cost": 9.825149739583333,
+      "val_slo_violation": 0.7041666666666666,
+      "seconds": 26.6,
+      "critic_loss": 0.3199,
+      "q_mean": -8.0684,
+      "actor_loss": 5.4004
+    },
+    {
+      "episode": 100,
+      "val_scalarized": 0.5562398309508959,
+      "val_p95_ms": 1655.1122672853865,
+      "val_cost": 12.150758463541665,
+      "val_slo_violation": 0.69375,
+      "seconds": 84.7,
+      "critic_loss": 0.1891,
+      "q_mean": -8.4388,
+      "actor_loss": 6.8738
+    },
+    {
+      "episode": 150,
+      "val_scalarized": 0.5308073063691457,
+      "val_p95_ms": 1475.7324083021497,
+      "val_cost": 12.554173177083333,
+      "val_slo_violation": 0.6,
+      "seconds": 139.0,
+      "critic_loss": 0.3342,
+      "q_mean": -8.8206,
+      "actor_loss": 6.3675
+    },
+    {
+      "episode": 200,
+      "val_scalarized": 0.5486003930370013,
+      "val_p95_ms": 1892.4367147056391,
+      "val_cost": 12.389222005208333,
+      "val_slo_violation": 0.5666666666666667,
+      "seconds": 194.6,
+      "critic_loss": 0.4224,
+      "q_mean": -9.1974,
+      "actor_loss": 6.8293
+    },
+    {
+      "episode": 250,
+      "val_scalarized": 0.6008329018950462,
+      "val_p95_ms": 2705.872733465285,
+      "val_cost": 12.39834309895833,
+      "val_slo_violation": 0.71875,
+      "seconds": 249.2,
+      "critic_loss": 0.3366,
+      "q_mean": -9.513,
+      "actor_loss": 6.9895
+    },
+    {
+      "episode": 300,
+      "val_scalarized": 0.5719385767976443,
+      "val_p95_ms": 2565.0429116790597,
+      "val_cost": 12.247587890625,
+      "val_slo_violation": 0.6166666666666667,
+      "seconds": 305.7,
+      "critic_loss": 0.4333,
+      "q_mean": -10.1861,
+      "actor_loss": 8.133
+    },
+    {
+      "episode": 350,
+      "val_scalarized": 0.5626737400889397,
+      "val_p95_ms": 4086.0232489951936,
+      "val_cost": 12.311787109374999,
+      "val_slo_violation": 0.6041666666666666,
+      "seconds": 362.8,
+      "critic_loss": 0.4867,
+      "q_mean": -10.8978,
+      "actor_loss": 8.3051
+    },
+    {
+      "episode": 400,
+      "val_scalarized": 0.5287349795301756,
+      "val_p95_ms": 3083.842109989948,
+      "val_cost": 12.380735677083331,
+      "val_slo_violation": 0.55625,
+      "seconds": 422.4,
+      "critic_loss": 0.3947,
+      "q_mean": -11.3873,
+      "actor_loss": 9.7146
+    },
+    {
+      "episode": 450,
+      "val_scalarized": 0.5248548313975334,
+      "val_p95_ms": 1568.1957020748189,
+      "val_cost": 12.49763671875,
+      "val_slo_violation": 0.5375,
+      "seconds": 484.1,
+      "critic_loss": 0.338,
+      "q_mean": -12.1398,
+      "actor_loss": 9.8278
+    },
+    {
+      "episode": 500,
+      "val_scalarized": 0.515399381518364,
+      "val_p95_ms": 1872.8637158773781,
+      "val_cost": 12.473362630208333,
+      "val_slo_violation": 0.49583333333333335,
+      "seconds": 545.9,
+      "critic_loss": 0.3691,
+      "q_mean": -12.1161,
+      "actor_loss": 11.0784
+    },
+    {
+      "episode": 550,
+      "val_scalarized": 0.5292721043030421,
+      "val_p95_ms": 2020.536136357255,
+      "val_cost": 12.180048828125,
+      "val_slo_violation": 0.5187499999999999,
+      "seconds": 606.4,
+      "critic_loss": 0.2887,
+      "q_mean": -12.0875,
+      "actor_loss": 10.3795
+    },
+    {
+      "episode": 600,
+      "val_scalarized": 0.5251430720090866,
+      "val_p95_ms": 2859.1272182434514,
+      "val_cost": 11.149977213541668,
+      "val_slo_violation": 0.6166666666666667,
+      "seconds": 666.8,
+      "critic_loss": 0.2863,
+      "q_mean": -12.3083,
+      "actor_loss": 11.5133
+    },
+    {
+      "episode": 650,
+      "val_scalarized": 0.5235577474037806,
+      "val_p95_ms": 2351.2314340739563,
+      "val_cost": 11.106409505208333,
+      "val_slo_violation": 0.6291666666666667,
+      "seconds": 727.2,
+      "critic_loss": 0.3346,
+      "q_mean": -11.7946,
+      "actor_loss": 10.3105
+    },
+    {
+      "episode": 700,
+      "val_scalarized": 0.5269623224933943,
+      "val_p95_ms": 2674.1749470044642,
+      "val_cost": 11.203489583333335,
+      "val_slo_violation": 0.6291666666666667,
+      "seconds": 787.3,
+      "critic_loss": 0.3694,
+      "q_mean": -11.6746,
+      "actor_loss": 9.895
+    },
+    {
+      "episode": 750,
+      "val_scalarized": 0.5392805561423302,
+      "val_p95_ms": 3721.458667035296,
+      "val_cost": 11.136175130208334,
+      "val_slo_violation": 0.6291666666666667,
+      "seconds": 847.2,
+      "critic_loss": 0.302,
+      "q_mean": -11.7006,
+      "actor_loss": 10.3954
+    },
+    {
+      "episode": 800,
+      "val_scalarized": 0.4978253295024236,
+      "val_p95_ms": 2028.2554047312362,
+      "val_cost": 11.364807942708333,
+      "val_slo_violation": 0.5458333333333333,
+      "seconds": 908.4,
+      "critic_loss": 0.3157,
+      "q_mean": -11.5325,
+      "actor_loss": 10.2222
+    }
+  ],
+  "best_val_scalarized": 0.4978253295024236,
+  "selected_fresh_val_scalarized": 0.5282185239096483,
+  "eval_preference": [
+    0.5,
+    0.35,
+    0.15
+  ],
+  "topology_training": "random 4-14 services, 2-5 tiers + 1 target topologies p=0.8",
+  "init_from": "models/mo_td3_large.pt",
+  "hparams": {
+    "n_step": 3,
+    "explore_noise": 0.2,
+    "eps_start": 0.2,
+    "eps_end": 0.03,
+    "bc_weight": 1.0,
+    "bc_floor": 0.3,
+    "bc_decay_frac": 0.8,
+    "demo_target_range": [
+      0.35,
+      0.65
+    ],
+    "demo_cpus": [
+      0.25,
+      0.5,
+      1.0
+    ],
+    "default_pref_prob": 0.3,
+    "relabel_prob": 0.5,
+    "val_episodes": 16,
+    "top_k": 3,
+    "final_val_episodes": 48,
+    "fixed_topology_prob": 0.0,
+    "replica_head": "round",
+    "actor_lr": 5e-05,
+    "critic_lr": 0.0002,
+    "batch_size": 128,
+    "tau": 0.005,
+    "gamma": 0.95,
+    "policy_delay": 2,
+    "grad_clip": 5.0,
+    "randomize_initial": true,
+    "hot_prob": 0.9,
+    "hot_demand": [
+      0.7,
+      1.6
+    ]
+  }
+}
