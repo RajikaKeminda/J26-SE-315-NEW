@@ -185,6 +185,10 @@ MAX_RESIZES_PER_STEP = _env_int("MAX_RESIZES_PER_STEP", 0)
 # (ALLOW_CPU_DECREASE=0). The scale-down cooldown and the stabilisation window after a scale-up still apply. 0 = off (the shipped results do not change).
 IDLE_RECLAIM_STEPS = _env_int("IDLE_RECLAIM_STEPS", 0)
 IDLE_RECLAIM_UTIL = _env_float("IDLE_RECLAIM_UTIL", 0.15)
+# No traffic, no scale-up: while the entry service receives fewer than SCALE_UP_MIN_ENTRY_RPS requests per second the agent adds no capacity anywhere. A starting JVM burns its
+# whole CPU limit for a minute or two, which looks exactly like demand to a CPU-only gate. 0 = off. (The entry's rate comes from traces, so the rule needs them: without traces
+# the agent holds anyway.)
+SCALE_UP_MIN_ENTRY_RPS = _env_float("SCALE_UP_MIN_ENTRY_RPS", 0.0)
 SCALE_DOWN_COOLDOWN_STEPS = _env_int("SCALE_DOWN_COOLDOWN_STEPS", 3)
 # Stabilisation window AFTER a scale-up (0 = off, which keeps the simulated results and the trained models exactly as shipped).
 # The live Train-Ticket profile turns it on: a JVM pod needs minutes to start, so undoing a scale-up within that time wastes it.

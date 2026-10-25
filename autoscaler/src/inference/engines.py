@@ -389,6 +389,12 @@ class LiveEngine(BaseEngine):
                 if a["cpu"] != metrics[svc]["cpu"] or a["mem"] != metrics[svc]["mem"]:
                     a["cpu"], a["mem"] = metrics[svc]["cpu"], metrics[svc]["mem"]
                     reasons.setdefault(svc, "resize disabled (ALLOW_RESIZE=0)")
+        if config.SCALE_UP_MIN_ENTRY_RPS > 0 and metrics[self.entry].get("requests", 0.0) < config.SCALE_UP_MIN_ENTRY_RPS:
+            for svc, a in approved.items():                  # start-up CPU is not demand: nothing is added while there is no traffic
+                if a["dr"] > 0 or a["cpu"] > metrics[svc]["cpu"] + 1e-9:
+                    a["dr"], a["cpu"] = min(a["dr"], 0), min(a["cpu"], metrics[svc]["cpu"])
+                    reasons[svc] = (reasons[svc] + "; " if svc in reasons else "") + (
+                        f"scale-up blocked: no traffic at the entry service ({metrics[self.entry].get('requests', 0.0):.2f} < {config.SCALE_UP_MIN_ENTRY_RPS:.2f} req/s)")
         ups = [s for s, a in approved.items() if a["dr"] > 0 and self._controlled(s)]
         if not ups or not hasattr(self._prom, "node_memory_headroom_mb"):
             return

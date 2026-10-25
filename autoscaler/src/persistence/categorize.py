@@ -15,6 +15,7 @@ _RULES = [
     ("busy", r"scale-down blocked: service is busy"),
     ("cpu_decrease_disabled", r"cpu decrease disabled"),
     ("idle_reclaim", r"idle reclaim"),
+    ("no_traffic", r"scale-up blocked: no traffic"),
     ("resize_limit", r"resize limit"),
     ("memory_floor", r"memory floor"),
     ("cooldown", r"scale-down cooldown"),
