@@ -180,6 +180,11 @@ SCALE_DOWN_MAX_UTIL = _env_float("SCALE_DOWN_MAX_UTIL", 1.01)
 # in one step (the busiest first), so the agent can never restart half the application at once. Defaults: no restriction (the shipped results do not change).
 ALLOW_CPU_DECREASE = os.environ.get("ALLOW_CPU_DECREASE", "1") == "1"
 MAX_RESIZES_PER_STEP = _env_int("MAX_RESIZES_PER_STEP", 0)
+# Idle reclaim: a service whose CPU utilisation stays below IDLE_RECLAIM_UTIL for IDLE_RECLAIM_STEPS steps in a row loses one replica (never below MIN_REPLICAS), whatever the
+# model proposes. Removing a replica restarts nothing, so this is the safe way to give capacity back after a load has gone, also where CPU shrinking is switched off
+# (ALLOW_CPU_DECREASE=0). The scale-down cooldown and the stabilisation window after a scale-up still apply. 0 = off (the shipped results do not change).
+IDLE_RECLAIM_STEPS = _env_int("IDLE_RECLAIM_STEPS", 0)
+IDLE_RECLAIM_UTIL = _env_float("IDLE_RECLAIM_UTIL", 0.15)
 SCALE_DOWN_COOLDOWN_STEPS = _env_int("SCALE_DOWN_COOLDOWN_STEPS", 3)
 # Stabilisation window AFTER a scale-up (0 = off, which keeps the simulated results and the trained models exactly as shipped).
 # The live Train-Ticket profile turns it on: a JVM pod needs minutes to start, so undoing a scale-up within that time wastes it.
