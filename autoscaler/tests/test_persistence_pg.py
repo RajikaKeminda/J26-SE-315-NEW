@@ -436,3 +436,24 @@ def test_a_database_failure_never_stops_training(monkeypatch):
     rec.on_episode(0, None, None, [], [], [], [])        # must not raise
     rec.on_validation({"episode": 1, "val_scalarized": 0, "val_p95_ms": 0, "val_cost": 0, "val_slo_violation": 0})
     rec.finish()
+
+
+def test_history_actions_can_be_limited_to_real_changes(connect, api):
+    """changed_only returns an action only if a replica count or a CPU limit really changed (the CPU before comes from that step's service metrics)."""
+    w = make_writer(connect, "cluster-c")
+    sink = PostgresSink(w, rows.StepRecorder("dfs", 1))
+    assert w.wait_ready()
+    p = _payload(step=0, ts=time.time())
+    _node(p).update(proposed_cpu=1.0, applied_cpu=1.0, cpu=0.3)                       # a CPU raise: 0.3 -> 1.0
+    sink.record_step(p)
+    q = _payload(step=1, ts=time.time())
+    _node(q).update(proposed_delta=1, applied_delta=0, blocked_reason="scale-up blocked: no demand (utilisation 0.02 < 0.50)")      # blocked: no change
+    sink.record_step(q)
+    sh = _payload(step=2, ts=time.time(), shadow=True)
+    _node(sh).update(proposed_delta=2, applied_delta=1)                              # a SHADOW decision: nothing happened in the cluster
+    sink.record_step(sh)
+    sink.close()
+    every = api.get("/api/history/actions", params={"cluster": "cluster-c"}).json()["data"]
+    changed = api.get("/api/history/actions", params={"cluster": "cluster-c", "changed_only": "true"}).json()["data"]
+    assert len(every) == 3 and len(changed) == 1, "a shadow decision is not a change"
+    assert changed[0]["step"] == 0 and changed[0]["cpu_before"] == 0.3 and changed[0]["applied_cpu"] == 1.0

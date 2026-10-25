@@ -97,7 +97,7 @@ class BaseEngine:
         self.step_i = 0
         self.history = {"p95": [], "cost": [], "rps": [], "slo": []}
         self.edge_calls = {}
-        self.sink = NullSink()                    # replaced by the live engine when a database is configured (src/persistence)
+        self.sink = NullSink("this run is not stored (only live runs are)")      # replaced by the live engine when a database is configured (src/persistence)
 
     def persistence_status(self):
         return self.sink.status()

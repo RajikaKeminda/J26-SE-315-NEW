@@ -47,4 +47,10 @@ class PostgresSink:
         return s
 
     def close(self):
+        try:
+            rows = self.recorder.finish()
+            if rows:
+                self.writer.put(rows)
+        except Exception:
+            pass
         self.writer.close()

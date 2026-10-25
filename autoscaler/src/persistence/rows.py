@@ -179,6 +179,15 @@ class StepRecorder:
         out["topology_snapshots"].append((step, ts, digest, n_services, [
             {"source": e["source"], "target": e["target"], "share": e.get("traffic_share")} for e in payload.get("edges", [])]))
 
+    def finish(self):
+        """At the end of a run: an SLO-violation episode still open is closed at its last breached step (otherwise it would be drawn as lasting for ever)."""
+        out = {}
+        if self._episode is not None:
+            ep = self._episode
+            out["violations"] = [self._episode_row(ep, ep["peak"] and ep.get("slo", 0.0), closed=True)]
+            self._episode, self._clean = None, 0
+        return out
+
     # -- SLO violation episodes ---------------------------------------------
     def _violation(self, out, payload, ts, step, breaker, applied):
         breached = _flag(payload.get("slo_breached"))
@@ -191,6 +200,7 @@ class StepRecorder:
                                       "breaker": False, "trace": None, "shares": defaultdict(float), "last_breach": ts,
                                       "last_step": step}
             ep["steps"] += 1
+            ep["slo"] = slo
             ep["last_breach"], ep["last_step"] = ts, step
             ep["actions"] += applied
             ep["breaker"] = ep["breaker"] or breaker
