@@ -29,11 +29,11 @@ from src import config
 from src.baselines.rule_based import HPABaseline, ThresholdBaseline
 from src.evaluation.metrics import evaluate_controller
 from src.rl_agent.controllers import RLController
-from src.rl_agent.env import AutoscalerEnv
+from src.rl_agent.env import AutoscalerEnv, topology_base_rps
 from src.rl_agent.mo_td3 import MOTD3Agent
 from src.rl_agent.replay import EpisodeReplay
 from src.simulation.simulator import random_topology
-from src.topologies import DEMO6
+from src.topologies import DEMO6, bottleneck_scenario
 
 # arm -> options.  `topology/ehg/replica_only` select the architecture ablations,
 # `fixed_w` makes the reward single-objective, `demos` toggles the HPA-demonstration seeding
@@ -95,6 +95,8 @@ class HParams:
     policy_delay: int = config.TD3_POLICY_DELAY
     grad_clip: float = 5.0
     randomize_initial: bool = False     # start every service at its own CPU limit (domain randomisation)
+    hot_prob: float = 0.0               # share of episodes in which ONE random service is made the only bottleneck (topologies.bottleneck_scenario)
+    hot_demand: tuple = (0.25, 1.6)     # cores the bottleneck service needs (it starts with a 0.1-core limit)
 
 
 def sample_preference(rng, fixed_w=None, default_prob=0.3):
@@ -176,10 +178,11 @@ def select_checkpoint(agent, candidates, w, n_episodes, seed0=60_000, topologies
 
 def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, warmup_episodes=30,
                 updates_per_episode=30, batch_size=None, val_every=50, verbose=True, log=print, hp=None,
-                init_from=None, sizes=(4, 12), target_topologies=None, target_prob=0.0, val_topologies=None):
+                init_from=None, sizes=(4, 12), target_topologies=None, target_prob=0.0, val_topologies=None, recorder=None):
     """`init_from`: warm-start from a checkpoint (fine-tuning). `sizes`: service-count range of the random training
     topologies. `target_topologies` (with probability `target_prob` per episode) are mixed into training, and
-    `val_topologies` replace the 6-service demo as the validation set - together they specialise a trained agent."""
+    `val_topologies` replace the 6-service demo as the validation set - together they specialise a trained agent.
+    `recorder` (persistence.training.TrainingRecorder) stores every episode and the validation curve in the database."""
     hp = hp or HParams()
     opts = ARMS[arm]
     batch_size = batch_size or hp.batch_size
@@ -229,8 +232,16 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
         topo = DEMO6 if rng.random() < hp.fixed_topology_prob else None
         if target_topologies and rng.random() < target_prob:
             topo = target_topologies[int(rng.integers(len(target_topologies)))]
+        if hp.hot_prob and rng.random() < hp.hot_prob:
+            # a BOTTLENECK episode: the request mix is shifted towards one random service and the traffic scaled until it is the only saturated one
+            # (topologies.bottleneck_scenario), on whatever application this episode would have used - so the agent can only be right by reading where the load is
+            base = topo if topo is not None else random_topology(rng, *sizes)
+            scenario, _ = bottleneck_scenario(base, rng, topology_base_rps(base), demand_range=hp.hot_demand)
+            topo = scenario or topo
         obs_list, idx_list, cont_list, rew = run_collect(env, policy_fn, topology=topo)
         replay.add_episode(obs_list, idx_list, cont_list, rew, w=w, demo=False)
+        if recorder is not None:
+            recorder.on_episode(ep, env, w, obs_list, idx_list, cont_list, rew)
 
         if ep >= warmup_episodes:
             bc_w = (hp.bc_weight * max(hp.bc_floor, 1.0 - frac / hp.bc_decay_frac)) if opts["demos"] else 0.0
@@ -249,6 +260,8 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
                      "val_cost": v["mean_cost"], "val_slo_violation": v["slo_violation_rate"],
                      "seconds": round(time.time() - t0, 1), **{k: round(x, 4) for k, x in last_info.items()}}
             history.append(entry)
+            if recorder is not None:
+                recorder.on_validation(entry)
             if v["scalarized"] < best:
                 best = v["scalarized"]
             kept.append((v["scalarized"], agent.state()))

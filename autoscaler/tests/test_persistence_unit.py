@@ -1,5 +1,7 @@
 """Persistence without a database: reason categories, the row builder, the writer thread (with the database calls replaced), the engine hook."""
 
+import json
+import os
 import time
 from datetime import datetime, timezone
 
@@ -396,3 +398,33 @@ def test_the_replay_engine_accepts_frames_loaded_from_the_database():
     assert e.tick()["replay_length"] == 2
     with pytest.raises(ValueError, match="no recorded payloads"):
         ReplayEngine(None, frames=[])
+
+
+def test_memory_can_be_locked_while_cpu_still_changes(monkeypatch):
+    """ALLOW_MEMORY_RESIZE=0: the agent's CPU and replica outputs act, its memory output is ignored (in training and live alike)."""
+    import numpy as np
+    from src.rl_agent.env import decode_action
+    metrics = {"a": {"cpu": 0.3, "mem": 800.0}}
+    idx, cont = np.array([4]), np.array([[0.9, 0.9]], dtype=np.float32)
+    free = decode_action(["a"], metrics, idx, cont)["a"]
+    assert free["cpu"] > 0.3 and free["mem"] != 800.0
+    monkeypatch.setattr(config, "ALLOW_MEMORY_RESIZE", False)
+    locked = decode_action(["a"], metrics, idx, cont)["a"]
+    assert locked["cpu"] == free["cpu"] and locked["mem"] == 800.0 and locked["dr"] == free["dr"] == 1
+
+
+def test_the_stored_regime_holds_no_absolute_path_of_this_machine(monkeypatch):
+    from src.persistence import training
+    monkeypatch.setattr(config, "SIM_PARAMS_PATH", os.path.join(config.BASE_DIR, "src", "simulation", "sim_params_trainticket.json"))
+    r = training.regime()
+    assert r["SIM_PARAMS_PATH"] == os.path.join("src", "simulation", "sim_params_trainticket.json")
+    assert "/Users/" not in json.dumps(r) and r["STEP_SECONDS"] == config.STEP_SECONDS
+
+
+def test_an_open_violation_is_closed_when_the_run_ends():
+    rec = rows.StepRecorder()
+    rec.rows(_payload(step=0, slo_breached=True, e2e={"p95_ms": 900.0, "mean_ms": 0, "p50_ms": 0, "p99_ms": 0, "error_rate": 0}))
+    rec.rows(_payload(step=1, slo_breached=True, e2e={"p95_ms": 950.0, "mean_ms": 0, "p50_ms": 0, "p99_ms": 0, "error_rate": 0}))
+    closed = rec.finish()["violations"][0]
+    assert closed[0] == 0 and closed[3] == 1 and closed[2] is not None and closed[4] == 2 and closed[5] == 950.0 and closed[6] == 500.0
+    assert rec.finish() == {}, "nothing left open"

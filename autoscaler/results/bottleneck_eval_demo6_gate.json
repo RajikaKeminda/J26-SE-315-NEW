@@ -1,0 +1,384 @@
+{
+ "topology": "demo6",
+ "bottleneck_services": [
+  "gateway-service",
+  "catalog-service",
+  "auth-service",
+  "inventory-service",
+  "pricing-service",
+  "user-service"
+ ],
+ "episodes_per_service": 6,
+ "scenarios": {
+  "gateway-service": {
+   "load_scale": 3.24,
+   "start_cpu": {
+    "gateway-service": 0.1
+   }
+  },
+  "catalog-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "catalog-service": 0.1
+   }
+  },
+  "auth-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "auth-service": 0.1
+   }
+  },
+  "inventory-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "inventory-service": 0.1
+   }
+  },
+  "pricing-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "pricing-service": 0.1
+   }
+  },
+  "user-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "user-service": 0.1
+   }
+  }
+ },
+ "regime": {
+  "STEP_SECONDS": 10.0,
+  "POD_STARTUP_SECONDS": 4.0,
+  "CPU_MAX": 1.0,
+  "MAX_REPLICAS": 8,
+  "ALLOW_MEMORY_RESIZE": true
+ },
+ "controllers": {
+  "hpa (tuned)": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 41.0,
+   "violations": 1.0,
+   "p95": 5396.75341912929,
+   "cost": 4.431026041666665,
+   "score": 0.7682613851017166,
+   "per_service": {
+    "gateway-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 12838.93373657374,
+     "cost": 4.96759375,
+     "score": 0.8145116524043686
+    },
+    "catalog-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 4100.305017830936,
+     "cost": 4.201015624999999,
+     "score": 0.7615532737884932
+    },
+    "auth-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 3835.1322552864876,
+     "cost": 4.329703124999999,
+     "score": 0.7613496490009859
+    },
+    "inventory-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 3849.2113486678013,
+     "cost": 4.39071875,
+     "score": 0.7562039378859948
+    },
+    "pricing-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 3848.3362802715765,
+     "cost": 4.39071875,
+     "score": 0.7568199180753133
+    },
+    "user-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 3908.6018761451905,
+     "cost": 4.306406249999999,
+     "score": 0.7591298794551437
+    }
+   }
+  },
+  "static": {
+   "hit": 0.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 41.0,
+   "violations": 1.0,
+   "p95": 22190.683346369828,
+   "cost": 2.8949999999999996,
+   "score": 0.7301270618584734,
+   "per_service": {
+    "gateway-service": {
+     "hit": 0.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 22387.71708127072,
+     "cost": 2.8949999999999996,
+     "score": 0.6885431434109002
+    },
+    "catalog-service": {
+     "hit": 0.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 21876.938079851447,
+     "cost": 2.8949999999999996,
+     "score": 0.7291371364176132
+    },
+    "auth-service": {
+     "hit": 0.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 22251.953949287545,
+     "cost": 2.8949999999999996,
+     "score": 0.7379855269945378
+    },
+    "inventory-service": {
+     "hit": 0.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 22207.025529206378,
+     "cost": 2.8949999999999996,
+     "score": 0.7437749898319442
+    },
+    "pricing-service": {
+     "hit": 0.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 22228.021229978545,
+     "cost": 2.8949999999999996,
+     "score": 0.7433425735768707
+    },
+    "user-service": {
+     "hit": 0.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 22192.444208624325,
+     "cost": 2.8949999999999996,
+     "score": 0.7379790009189748
+    }
+   }
+  },
+  "mo_td3_bn": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 4.222222222222222,
+   "violations": 0.27569444444444446,
+   "p95": 2035.0966389406215,
+   "cost": 4.515622178819445,
+   "score": 0.38717791747997027,
+   "per_service": {
+    "gateway-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 7.666666666666667,
+     "violations": 0.5041666666666667,
+     "p95": 5197.091582776308,
+     "cost": 5.562434895833334,
+     "score": 0.4999677236895943
+    },
+    "catalog-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 3.3333333333333335,
+     "violations": 0.22083333333333333,
+     "p95": 1325.2414805154117,
+     "cost": 4.43133984375,
+     "score": 0.36858067018909163
+    },
+    "auth-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 3.0,
+     "violations": 0.21250000000000002,
+     "p95": 1361.684358140592,
+     "cost": 4.23465625,
+     "score": 0.3512858732861201
+    },
+    "inventory-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 3.5,
+     "violations": 0.23333333333333336,
+     "p95": 1451.4587941531697,
+     "cost": 4.281484375000001,
+     "score": 0.3687452147705305
+    },
+    "pricing-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 3.5,
+     "violations": 0.23333333333333336,
+     "p95": 1417.7056197534187,
+     "cost": 4.282908854166666,
+     "score": 0.3687725033132992
+    },
+    "user-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 4.333333333333333,
+     "violations": 0.25,
+     "p95": 1457.3979983048291,
+     "cost": 4.300908854166667,
+     "score": 0.3657155196311855
+    }
+   }
+  },
+  "mo_td3_full": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 7.444444444444444,
+   "violations": 0.34375,
+   "p95": 2626.088982655185,
+   "cost": 4.343401258680555,
+   "score": 0.42336750498428954,
+   "per_service": {
+    "gateway-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 12.833333333333334,
+     "violations": 0.5083333333333333,
+     "p95": 5815.872697239426,
+     "cost": 5.2563528645833335,
+     "score": 0.5623207658419006
+    },
+    "catalog-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 11.666666666666666,
+     "violations": 0.38333333333333336,
+     "p95": 2992.774435865737,
+     "cost": 4.132833333333334,
+     "score": 0.43768509081315005
+    },
+    "auth-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 8.0,
+     "violations": 0.3708333333333333,
+     "p95": 1369.5819738619148,
+     "cost": 4.176095052083333,
+     "score": 0.4195756941138343
+    },
+    "inventory-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 3.6666666666666665,
+     "violations": 0.25833333333333336,
+     "p95": 2138.408340806159,
+     "cost": 4.161356770833333,
+     "score": 0.36994080650298833
+    },
+    "pricing-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 3.6666666666666665,
+     "violations": 0.25833333333333336,
+     "p95": 1632.545820999151,
+     "cost": 4.153479166666666,
+     "score": 0.37108176948470106
+    },
+    "user-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 4.833333333333333,
+     "violations": 0.2833333333333333,
+     "p95": 1807.3506271587214,
+     "cost": 4.180290364583333,
+     "score": 0.3796009031491628
+    }
+   }
+  },
+  "mo_td3_large": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 17.805555555555554,
+   "violations": 0.5812499999999999,
+   "p95": 4275.111292646084,
+   "cost": 4.372918402777778,
+   "score": 0.5207963443687773,
+   "per_service": {
+    "gateway-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 38.5,
+     "violations": 0.9666666666666667,
+     "p95": 5930.858468298823,
+     "cost": 5.4067643229166675,
+     "score": 0.7753126150842026
+    },
+    "catalog-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 15.0,
+     "violations": 0.4458333333333333,
+     "p95": 4080.4888782521707,
+     "cost": 4.281916666666667,
+     "score": 0.4691278234524563
+    },
+    "auth-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 15.833333333333334,
+     "violations": 0.6583333333333333,
+     "p95": 4367.704494354666,
+     "cost": 4.312700520833333,
+     "score": 0.528010589738452
+    },
+    "inventory-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 13.0,
+     "violations": 0.41250000000000003,
+     "p95": 3192.979230402237,
+     "cost": 4.095447916666667,
+     "score": 0.44759860236337023
+    },
+    "pricing-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 16.333333333333332,
+     "violations": 0.44166666666666665,
+     "p95": 4161.989979283745,
+     "cost": 4.079444010416666,
+     "score": 0.462246799031309
+    },
+    "user-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 8.166666666666666,
+     "violations": 0.5625,
+     "p95": 3916.6467052848548,
+     "cost": 4.061236979166667,
+     "score": 0.4424816365428736
+    }
+   }
+  }
+ }
+}

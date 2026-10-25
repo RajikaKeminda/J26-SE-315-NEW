@@ -37,6 +37,8 @@ class Topology:
     entry: str
     call_graph: dict                       # {caller: [(callee, traffic_share), ...]}
     work_ms: dict = field(default_factory=dict)   # {service: CPU ms per request}
+    load_scale: float = 1.0                       # multiplies the base external traffic (bottleneck scenarios, see bottleneck_scenario)
+    initial_cpu: dict = field(default_factory=dict)   # {service: starting CPU limit}; the others start at CONFIG.CPU_DEFAULT
 
     def work(self, service: str) -> float:
         return self.work_ms.get(service, DEFAULT_WORK_MS)
@@ -132,6 +134,94 @@ TRAINTICKET_SIM = Topology(
              "ts-preserve-service": 15.0, "ts-route-service": 13.0, "ts-seat-service": 18.4, "ts-security-service": 18.7,
              "ts-station-service": 6.6, "ts-train-service": 10.0, "ts-travel-service": 24.9},
 )
+
+def visit_ratios(topo: Topology) -> dict:
+    """Expected calls per entry request, per service (the simulator forwards a caller's traffic to its callees in proportion to the shares)."""
+    ratio = {s: 0.0 for s in topo.services}
+    ratio[topo.entry] = 1.0
+    indeg = {s: 0 for s in topo.services}
+    for targets in topo.call_graph.values():
+        for c, _ in targets:
+            if c in indeg:
+                indeg[c] += 1
+    queue = [s for s, d in indeg.items() if d == 0]
+    while queue:
+        n = queue.pop()
+        for c, share in topo.call_graph.get(n, []):
+            if c in ratio:
+                ratio[c] += ratio[n] * share
+                indeg[c] -= 1
+                if indeg[c] == 0:
+                    queue.append(c)
+    return ratio
+
+
+def shift_mix(topo: Topology, hot: str, k: float) -> Topology:
+    """The same application under a different REQUEST MIX: every call that leads towards `hot` gets (1 + k) times its weight (the others are renormalised),
+    so more of the traffic ends up there - the way a search-heavy or booking-heavy load moves the bottleneck from one service to another."""
+    leads = {hot}
+    changed = True
+    while changed:
+        changed = False
+        for caller, targets in topo.call_graph.items():
+            if caller not in leads and any(c in leads for c, _ in targets):
+                leads.add(caller)
+                changed = True
+    graph = {}
+    for caller, targets in topo.call_graph.items():
+        if not targets or caller not in leads:
+            graph[caller] = list(targets)
+            continue
+        w = [(c, share * ((1.0 + k) if c in leads else 1.0)) for c, share in targets]
+        total = sum(x for _, x in w) / max(sum(share for _, share in targets), 1e-12)
+        graph[caller] = [(c, x / total) for c, x in w]
+    from dataclasses import replace
+    return replace(topo, call_graph=graph)
+
+
+def bottleneck_scenario(topo: Topology, rng, base_rps: float, hot=None, k_range=(3.0, 8.0), demand_range=(0.25, 1.6), max_scale=6.0,
+                        others_max_demand=None, start_cpu=0.1, tries=30):
+    """A scenario in which `hot` (one random service when not given) IS the bottleneck, whatever service that is: the request mix is shifted towards it,
+    the traffic is scaled until it needs `demand_range` cores - but never so far that ANY other service would need more than `others_max_demand` cores (then
+    that one would be the bottleneck) - and it starts with a small CPU limit (`start_cpu`), so it is saturated from the first step. The fix exists
+    (up to 2 replicas of 1 core each cover the demand) and the other services stay well below their limits, so the agent can only be right by adding
+    capacity to `hot`. -> (Topology, hot), or (None, hot) when this service cannot be made the only bottleneck."""
+    from dataclasses import replace
+    from src import config
+    if others_max_demand is None:                       # 70 % of what every other service starts with (replicas x CPU limit)
+        others_max_demand = 0.7 * config.INITIAL_REPLICAS * config.CPU_DEFAULT
+    ratios0 = visit_ratios(topo)
+    candidates = [s for s in topo.services if ratios0.get(s, 0.0) > 1e-6]
+    for _ in range(1 if hot else tries):
+        h = hot or candidates[int(rng.integers(len(candidates)))]
+        shifted = shift_mix(topo, h, float(rng.uniform(*k_range)))
+        v = visit_ratios(shifted)
+        per_rps = {s: v[s] * shifted.work(s) / 1000.0 for s in shifted.services}          # cores each service needs per external request per second
+        other_max = max(per_rps[s] for s in shifted.services if s != h)
+        want = float(rng.uniform(*demand_range)) / max(base_rps * per_rps[h], 1e-12)
+        scale = min(max(want, 1.0), max_scale, others_max_demand / max(base_rps * other_max, 1e-12))
+        if base_rps * scale * per_rps[h] >= demand_range[0] and scale >= 0.2:
+            return replace(shifted, name=f"{topo.name}+bn:{h}", load_scale=scale, initial_cpu={h: start_cpu}), h
+        if hot:
+            break
+    return None, hot
+
+
+def hot_variant(topo: Topology, rng, base_rps: float, demand_range=(0.7, 1.6), max_factor=8.0, hot=None):
+    """The same application with ONE service turned into the bottleneck: its CPU cost per request is raised until, at `base_rps`, it needs
+    `demand_range` cores (never lowered, never more than `max_factor` times); `hot` names the service, otherwise one is drawn. Training on these variants, with a different service each time,
+    makes the agent read where the load is instead of memorising which service was heavy. -> (Topology, hot service)."""
+    ratio = visit_ratios(topo)
+    candidates = [s for s in topo.services if s != topo.entry and ratio.get(s, 0.0) > 1e-6]
+    hot = hot or candidates[int(rng.integers(len(candidates)))]
+    demand_now = base_rps * ratio[hot] * topo.work(hot) / 1000.0
+    want = float(rng.uniform(*demand_range))
+    factor = min(max(want / max(demand_now, 1e-9), 1.0), max_factor)
+    work = {s: topo.work(s) for s in topo.services}
+    work[hot] = work[hot] * factor
+    from dataclasses import replace
+    return replace(topo, name=f"{topo.name}+hot:{hot}", work_ms=work), hot
+
 
 TOPOLOGIES = {t.name: t for t in (DEMO6, TRAINTICKET14, TRAINTICKET_LIVE, TRAINTICKET_SIM)}
 

@@ -1,0 +1,307 @@
+{
+ "cluster": "train-ticket",
+ "date": "2026-10-24",
+ "model": "models/mo_td3_trainticket_cpu.pt",
+ "slo_ms_set": 3000,
+ "training_run_id": "711e665a-d44a-43c0-a991-c575f9537087",
+ "database_runs": {
+  "phase1_shadow": "033b7874-16df-4932-9e16-be79476d3ddf",
+  "phase2_act": "a78c3337-97b9-4a01-af0c-3ed4b130a331",
+  "phase3_shadow_baseline": "bc8bcf70-863a-4a36-bd6b-71be079cca6b",
+  "phase3_act": "9037bb50-6828-4264-b511-fd3dd5187b48"
+ },
+ "simulator_comparison_2_replica_cap": {
+  "static": {
+   "p95_latency": 5471.40756484539,
+   "slo_violation_rate": 0.9369791666666666,
+   "mean_cost": 12.0725,
+   "scalarized": 0.6609065855542818,
+   "adaptation_time_s": 581.25,
+   "mean_replicas": 11.0,
+   "by_pattern": {
+    "normal": {
+     "slo_violation_rate": 1.0,
+     "p95_latency": 573.7274900262393,
+     "mean_cost": 12.0725
+    },
+    "burst": {
+     "slo_violation_rate": 1.0,
+     "p95_latency": 4901.049312769294,
+     "mean_cost": 12.0725
+    },
+    "diurnal": {
+     "slo_violation_rate": 0.7854166666666669,
+     "p95_latency": 7653.273780822469,
+     "mean_cost": 12.0725
+    },
+    "rampup": {
+     "slo_violation_rate": 0.9624999999999999,
+     "p95_latency": 8757.579675763553,
+     "mean_cost": 12.0725
+    }
+   }
+  },
+  "threshold": {
+   "p95_latency": 1641.0619254659498,
+   "slo_violation_rate": 0.8411458333333334,
+   "mean_cost": 12.60581640625,
+   "scalarized": 0.6031136251986027,
+   "adaptation_time_s": 426.25,
+   "mean_replicas": 11.4859375,
+   "by_pattern": {
+    "normal": {
+     "slo_violation_rate": 1.0,
+     "p95_latency": 573.7274900262393,
+     "mean_cost": 12.0725
+    },
+    "burst": {
+     "slo_violation_rate": 0.6999999999999998,
+     "p95_latency": 3941.8344955631655,
+     "mean_cost": 12.721854166666667
+    },
+    "diurnal": {
+     "slo_violation_rate": 0.7020833333333334,
+     "p95_latency": 1032.6990587429414,
+     "mean_cost": 12.767583333333334
+    },
+    "rampup": {
+     "slo_violation_rate": 0.9624999999999999,
+     "p95_latency": 1015.9866575314533,
+     "mean_cost": 12.861328125000002
+    }
+   }
+  },
+  "hpa (default 60%)": {
+   "p95_latency": 1327.3845283476405,
+   "slo_violation_rate": 0.5572916666666666,
+   "mean_cost": 13.026524739583332,
+   "scalarized": 0.5349686356882254,
+   "adaptation_time_s": 426.25,
+   "mean_replicas": 11.869270833333333,
+   "by_pattern": {
+    "normal": {
+     "slo_violation_rate": 0.13541666666666669,
+     "p95_latency": 355.99003156445116,
+     "mean_cost": 13.115124999999999
+    },
+    "burst": {
+     "slo_violation_rate": 0.45625,
+     "p95_latency": 3305.733556760022,
+     "mean_cost": 13.099119791666666
+    },
+    "diurnal": {
+     "slo_violation_rate": 0.6770833333333335,
+     "p95_latency": 731.3461083246879,
+     "mean_cost": 12.941354166666668
+    },
+    "rampup": {
+     "slo_violation_rate": 0.9604166666666666,
+     "p95_latency": 916.468416741401,
+     "mean_cost": 12.9505
+    }
+   }
+  },
+  "hpa (tuned)": {
+   "p95_latency": 1267.9504086479944,
+   "slo_violation_rate": 0.48125,
+   "mean_cost": 13.135703125,
+   "scalarized": 0.5092250549544891,
+   "adaptation_time_s": 426.25,
+   "mean_replicas": 11.96875,
+   "by_pattern": {
+    "normal": {
+     "slo_violation_rate": 0.08333333333333331,
+     "p95_latency": 343.48720113453254,
+     "mean_cost": 13.169999999999996
+    },
+    "burst": {
+     "slo_violation_rate": 0.39166666666666666,
+     "p95_latency": 3287.2501505079035,
+     "mean_cost": 13.169999999999996
+    },
+    "diurnal": {
+     "slo_violation_rate": 0.6583333333333333,
+     "p95_latency": 584.1876671542701,
+     "mean_cost": 13.053390625
+    },
+    "rampup": {
+     "slo_violation_rate": 0.7916666666666666,
+     "p95_latency": 856.8766157952715,
+     "mean_cost": 13.149421875
+    }
+   }
+  },
+  "mo_td3_large": {
+   "p95_latency": 1517.6813169759914,
+   "slo_violation_rate": 0.6953125,
+   "mean_cost": 10.388327962239584,
+   "scalarized": 0.498769611120224,
+   "adaptation_time_s": 498.75,
+   "mean_replicas": 11.986458333333331,
+   "by_pattern": {
+    "normal": {
+     "slo_violation_rate": 0.4395833333333334,
+     "p95_latency": 433.8370602867283,
+     "mean_cost": 9.980811197916667
+    },
+    "burst": {
+     "slo_violation_rate": 0.6208333333333333,
+     "p95_latency": 3919.3096192106073,
+     "mean_cost": 10.972442708333332
+    },
+    "diurnal": {
+     "slo_violation_rate": 0.7604166666666666,
+     "p95_latency": 734.882719690975,
+     "mean_cost": 10.095569010416666
+    },
+    "rampup": {
+     "slo_violation_rate": 0.9604166666666666,
+     "p95_latency": 982.6958687156548,
+     "mean_cost": 10.504488932291666
+    }
+   }
+  },
+  "mo_td3_trainticket_cap6": {
+   "p95_latency": 1270.901998357749,
+   "slo_violation_rate": 0.4859374999999999,
+   "mean_cost": 13.196948242187501,
+   "scalarized": 0.5127963821093241,
+   "adaptation_time_s": 443.125,
+   "mean_replicas": 11.980208333333332,
+   "by_pattern": {
+    "normal": {
+     "slo_violation_rate": 0.12916666666666668,
+     "p95_latency": 355.5853874497475,
+     "mean_cost": 13.20498046875
+    },
+    "burst": {
+     "slo_violation_rate": 0.42500000000000004,
+     "p95_latency": 3295.7918697437804,
+     "mean_cost": 13.209570312499999
+    },
+    "diurnal": {
+     "slo_violation_rate": 0.6166666666666666,
+     "p95_latency": 578.1615930345052,
+     "mean_cost": 13.154492187499997
+    },
+    "rampup": {
+     "slo_violation_rate": 0.7729166666666667,
+     "p95_latency": 854.0691432029626,
+     "mean_cost": 13.21875
+    }
+   }
+  },
+  "mo_td3_trainticket_cpu": {
+   "p95_latency": 1275.8046933086177,
+   "slo_violation_rate": 0.4817708333333333,
+   "mean_cost": 9.725985351562501,
+   "scalarized": 0.4227438997477293,
+   "adaptation_time_s": 427.5,
+   "mean_replicas": 12.535937499999998,
+   "by_pattern": {
+    "normal": {
+     "slo_violation_rate": 0.08541666666666665,
+     "p95_latency": 346.59034701194946,
+     "mean_cost": 9.332788411458333
+    },
+    "burst": {
+     "slo_violation_rate": 0.39166666666666666,
+     "p95_latency": 3294.379367577043,
+     "mean_cost": 11.156695963541667
+    },
+    "diurnal": {
+     "slo_violation_rate": 0.6625,
+     "p95_latency": 598.7833912022076,
+     "mean_cost": 9.167340494791665
+    },
+    "rampup": {
+     "slo_violation_rate": 0.7875000000000001,
+     "p95_latency": 863.4656674432696,
+     "mean_cost": 9.247116536458334
+    }
+   }
+  }
+ },
+ "load_generator_reports(PC session)": {
+  "phase1_shadow_300m_1pod": {
+   "users": 3,
+   "seconds": 540,
+   "req_per_s": 4.6,
+   "calls": 2516,
+   "failed": 0,
+   "order_refresh_p50_p95_ms": [
+    1073,
+    1878
+   ],
+   "preserve_p50_p95_ms": [
+    2534,
+    3694
+   ]
+  },
+  "phase2_agent_acted_before_load": {
+   "users": 3,
+   "seconds": 1200,
+   "req_per_s": 7.9,
+   "calls": 9445,
+   "failed_http": 0,
+   "order_refresh_p50_p95_ms": [
+    324,
+    571
+   ],
+   "preserve_p50_p95_ms": [
+    816,
+    1176
+   ]
+  },
+  "phase3_agent_acted_during_load": {
+   "users": 3,
+   "seconds": 1080,
+   "req_per_s": 5.9,
+   "calls": 6377,
+   "failed_http": 125,
+   "failed_percent": 2.0,
+   "failure_window_s": 98,
+   "order_service_unavailable_s_at_most": 80,
+   "failure_buckets_30s": {
+    "22:09:00": 2,
+    "22:09:30": 0,
+    "22:10:00": 31,
+    "22:10:30": 78,
+    "22:11:00": 14
+   }
+  }
+ },
+ "phase3_from_database(gateway)": {
+  "A_baseline_300m_1pod_shadow": {
+   "steps": 13,
+   "rps": 2.9,
+   "gateway_p95_ms": 3281
+  },
+  "B_resize_window": {
+   "steps": 5,
+   "rps": 4.7,
+   "gateway_p95_ms": 1982
+  },
+  "C_after_1core_2pods": {
+   "steps": 20,
+   "rps": 7.3,
+   "gateway_p95_ms": 897
+  },
+  "ts_order_service": {
+   "before": {
+    "cpu": 0.3,
+    "replicas": 1,
+    "own_p95_ms": 2073,
+    "cpu_util": 0.79
+   },
+   "after": {
+    "cpu": 1.0,
+    "replicas": 2,
+    "own_p95_ms": 322,
+    "cpu_util": 0.32
+   }
+  }
+ },
+ "agent_behaviour": "proposed +3 replicas and CPU 1.0 for ts-order-service at every step (idle and under load); the guard clamped replicas to 2; it never proposed a scale-down",
+ "bug_found_and_fixed": "ALLOW_MEMORY_RESIZE=0 still rounded memory to its 64 MiB grid and the resize patch rewrote requests=limits (memory 800->768 MiB, requests 50m/128Mi -> 1/768Mi); fixed in safety/guards.py and k8s_action/k8s_client.py, verified live in phase 3"
+}

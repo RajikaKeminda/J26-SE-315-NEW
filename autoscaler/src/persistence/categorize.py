@@ -11,6 +11,12 @@ import re
 # (code, regex matched at the start of a note) - one entry per message the code base can produce
 _RULES = [
     ("clamp", r"clamped replicas"),
+    ("no_demand", r"scale-up blocked: no demand"),
+    ("busy", r"scale-down blocked: service is busy"),
+    ("cpu_decrease_disabled", r"cpu decrease disabled"),
+    ("idle_reclaim", r"idle reclaim"),
+    ("no_traffic", r"scale-up blocked: no traffic"),
+    ("resize_limit", r"resize limit"),
     ("memory_floor", r"memory floor"),
     ("cooldown", r"scale-down cooldown"),
     ("stabilisation", r"scale-down blocked after a scale-up"),

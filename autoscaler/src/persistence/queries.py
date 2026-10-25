@@ -68,13 +68,17 @@ def metrics(conn, cluster_id, since=None, until=None, service=None, limit=5000):
                  (cluster_id, since, until, service, service, _limit(limit)))
 
 
-def actions(conn, cluster_id, since=None, until=None, service=None, outcome=None, limit=2000):
+def actions(conn, cluster_id, since=None, until=None, service=None, outcome=None, changed_only=False, limit=2000):
+    """`changed_only`: only actions that really changed something in the cluster - not shadow decisions - a replica count, or a CPU limit different from the one the service had at that step."""
     since, until = _window(since, until)
-    return _rows(conn, "SELECT run_id::text AS run_id, step, ts, service, shadow, outcome, proposed_dr, guard_dr, applied_dr, proposed_cpu, "
-                       "applied_cpu, proposed_mem_mb, applied_mem_mb, replicas_before, replicas_after, reason, reason_codes, cpu_util, p95_ms "
-                       "FROM actions WHERE cluster_id = %s AND ts >= %s AND ts <= %s AND (%s::text IS NULL OR service = %s) "
-                       "AND (%s::text IS NULL OR outcome = %s) ORDER BY ts DESC LIMIT %s",
-                 (cluster_id, since, until, service, service, outcome, outcome, _limit(limit)))
+    return _rows(conn, "SELECT a.run_id::text AS run_id, a.step, a.ts, a.service, a.shadow, a.outcome, a.proposed_dr, a.guard_dr, a.applied_dr, a.proposed_cpu, "
+                       "a.applied_cpu, m.cpu_limit AS cpu_before, a.proposed_mem_mb, a.applied_mem_mb, a.replicas_before, a.replicas_after, a.reason, a.reason_codes, "
+                       "a.cpu_util, a.p95_ms FROM actions a LEFT JOIN service_metrics m ON m.run_id = a.run_id AND m.step = a.step AND m.service = a.service "
+                       "WHERE a.cluster_id = %s AND a.ts >= %s AND a.ts <= %s AND (%s::text IS NULL OR a.service = %s) "
+                       "AND (%s::text IS NULL OR a.outcome = %s) "
+                       "AND (NOT %s OR (NOT a.shadow AND a.outcome IN ('applied', 'modified') AND (a.applied_dr <> 0 OR a.replicas_after <> a.replicas_before "
+                       "OR (m.cpu_limit IS NOT NULL AND abs(a.applied_cpu - m.cpu_limit) > 0.0001)))) ORDER BY a.ts DESC LIMIT %s",
+                 (cluster_id, since, until, service, service, outcome, outcome, bool(changed_only), _limit(limit)))
 
 
 def violations(conn, cluster_id, since=None, until=None, limit=500):

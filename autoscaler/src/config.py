@@ -170,6 +170,25 @@ TD3_REPLAY_EPISODES = 4000
 # ---------------------------------------------------------------------------
 # Scaling DOWN is slower than UP, and never right after a scale-UP (a stabilisation window). Counted in control steps; it must
 # outlast a pod's start-up (about 4 s for the demo app, 95-240 s for Train-Ticket's JVMs).
+# Demand gate (safety/guards.py): the agent may ADD capacity (replicas or CPU) only to a service that is busy (CPU utilisation >= SCALE_UP_MIN_UTIL), and may
+# REMOVE capacity only from a service that is not (utilisation <= SCALE_DOWN_MAX_UTIL). It ties every action to where the load really is, like an HPA's target.
+# Off by default (0 / 1.01), so the shipped simulator results stay valid; the Train-Ticket profile switches it on.
+SCALE_UP_MIN_UTIL = _env_float("SCALE_UP_MIN_UTIL", 0.0)
+SCALE_DOWN_MAX_UTIL = _env_float("SCALE_DOWN_MAX_UTIL", 1.01)
+# Resize safety on clusters where a resize restarts the pod (and the service is down meanwhile, as with a Recreate rollout):
+# ALLOW_CPU_DECREASE=0 never shrinks a CPU limit (replicas may still be removed - that restarts nothing); MAX_RESIZES_PER_STEP=N lets at most N services be resized
+# in one step (the busiest first), so the agent can never restart half the application at once. Defaults: no restriction (the shipped results do not change).
+ALLOW_CPU_DECREASE = os.environ.get("ALLOW_CPU_DECREASE", "1") == "1"
+MAX_RESIZES_PER_STEP = _env_int("MAX_RESIZES_PER_STEP", 0)
+# Idle reclaim: a service whose CPU utilisation stays below IDLE_RECLAIM_UTIL for IDLE_RECLAIM_STEPS steps in a row loses one replica (never below MIN_REPLICAS), whatever the
+# model proposes. Removing a replica restarts nothing, so this is the safe way to give capacity back after a load has gone, also where CPU shrinking is switched off
+# (ALLOW_CPU_DECREASE=0). The scale-down cooldown and the stabilisation window after a scale-up still apply. 0 = off (the shipped results do not change).
+IDLE_RECLAIM_STEPS = _env_int("IDLE_RECLAIM_STEPS", 0)
+IDLE_RECLAIM_UTIL = _env_float("IDLE_RECLAIM_UTIL", 0.15)
+# No traffic, no scale-up: while the entry service receives fewer than SCALE_UP_MIN_ENTRY_RPS requests per second the agent adds no capacity anywhere. A starting JVM burns its
+# whole CPU limit for a minute or two, which looks exactly like demand to a CPU-only gate. 0 = off. (The entry's rate comes from traces, so the rule needs them: without traces
+# the agent holds anyway.)
+SCALE_UP_MIN_ENTRY_RPS = _env_float("SCALE_UP_MIN_ENTRY_RPS", 0.0)
 SCALE_DOWN_COOLDOWN_STEPS = _env_int("SCALE_DOWN_COOLDOWN_STEPS", 3)
 # Stabilisation window AFTER a scale-up (0 = off, which keeps the simulated results and the trained models exactly as shipped).
 # The live Train-Ticket profile turns it on: a JVM pod needs minutes to start, so undoing a scale-up within that time wastes it.
@@ -242,6 +261,9 @@ TOPOLOGY_MIN_CALLS = _env_float("TOPOLOGY_MIN_CALLS", 2.0)
 # (a resize is a rolling restart that briefly runs old and new pod side by side).
 NODE_MEMORY_RESERVE_MB = _env_float("NODE_MEMORY_RESERVE_MB", 768.0)
 ALLOW_RESIZE = os.environ.get("ALLOW_RESIZE", "1") == "1"
+# ALLOW_MEMORY_RESIZE=0: the agent may change CPU but never memory (decode_action ignores the memory output, in training and live alike). For a node
+# whose memory is the scarce resource, where a memory increase could stall it but a CPU limit costs nothing.
+ALLOW_MEMORY_RESIZE = os.environ.get("ALLOW_MEMORY_RESIZE", "1") == "1"
 CONTROLLED_SERVICES = [x.strip() for x in os.environ.get("CONTROLLED_SERVICES", "").split(",") if x.strip()]
 
 # ---------------------------------------------------------------------------

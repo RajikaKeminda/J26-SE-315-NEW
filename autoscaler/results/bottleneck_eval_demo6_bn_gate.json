@@ -1,0 +1,315 @@
+{
+ "topology": "demo6",
+ "bottleneck_services": [
+  "gateway-service",
+  "catalog-service",
+  "auth-service",
+  "inventory-service",
+  "pricing-service",
+  "user-service"
+ ],
+ "episodes_per_service": 6,
+ "random_focus_baseline": 0.16666666666666666,
+ "scenarios": {
+  "gateway-service": {
+   "load_scale": 3.24,
+   "start_cpu": {
+    "gateway-service": 0.1
+   }
+  },
+  "catalog-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "catalog-service": 0.1
+   }
+  },
+  "auth-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "auth-service": 0.1
+   }
+  },
+  "inventory-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "inventory-service": 0.1
+   }
+  },
+  "pricing-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "pricing-service": 0.1
+   }
+  },
+  "user-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "user-service": 0.1
+   }
+  }
+ },
+ "regime": {
+  "STEP_SECONDS": 10.0,
+  "POD_STARTUP_SECONDS": 4.0,
+  "CPU_MAX": 1.0,
+  "MAX_REPLICAS": 8,
+  "ALLOW_MEMORY_RESIZE": true
+ },
+ "controllers": {
+  "hpa (tuned)": {
+   "focus": 0.3837301587301587,
+   "violations": 1.0,
+   "p95": 5516.3521820035785,
+   "cost": 4.340427083333332,
+   "score": 0.7636690131159621,
+   "per_service": {
+    "gateway-service": {
+     "focus": 0.33968253968253964,
+     "violations": 1.0,
+     "p95": 13286.703892439005,
+     "cost": 4.873296874999999,
+     "score": 0.8082610103597441
+    },
+    "catalog-service": {
+     "focus": 0.4563492063492063,
+     "violations": 1.0,
+     "p95": 4125.416213891141,
+     "cost": 4.14221875,
+     "score": 0.758157435909914
+    },
+    "auth-service": {
+     "focus": 0.3761904761904762,
+     "violations": 1.0,
+     "p95": 3934.5629890425807,
+     "cost": 4.147765625,
+     "score": 0.7521956895385699
+    },
+    "inventory-service": {
+     "focus": 0.373015873015873,
+     "violations": 1.0,
+     "p95": 3873.891150479845,
+     "cost": 4.349671874999999,
+     "score": 0.7547148968646548
+    },
+    "pricing-service": {
+     "focus": 0.373015873015873,
+     "violations": 1.0,
+     "p95": 3873.10340800206,
+     "cost": 4.349671874999999,
+     "score": 0.7551993381006143
+    },
+    "user-service": {
+     "focus": 0.3841269841269841,
+     "violations": 1.0,
+     "p95": 4004.4354381668386,
+     "cost": 4.179937499999999,
+     "score": 0.7534857079222755
+    }
+   }
+  },
+  "static": {
+   "focus": NaN,
+   "violations": 1.0,
+   "p95": 22190.683346369828,
+   "cost": 2.8949999999999996,
+   "score": 0.7301270618584734,
+   "per_service": {
+    "gateway-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22387.71708127072,
+     "cost": 2.8949999999999996,
+     "score": 0.6885431434109002
+    },
+    "catalog-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 21876.938079851447,
+     "cost": 2.8949999999999996,
+     "score": 0.7291371364176132
+    },
+    "auth-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22251.953949287545,
+     "cost": 2.8949999999999996,
+     "score": 0.7379855269945378
+    },
+    "inventory-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22207.025529206378,
+     "cost": 2.8949999999999996,
+     "score": 0.7437749898319442
+    },
+    "pricing-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22228.021229978545,
+     "cost": 2.8949999999999996,
+     "score": 0.7433425735768707
+    },
+    "user-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22192.444208624325,
+     "cost": 2.8949999999999996,
+     "score": 0.7379790009189748
+    }
+   }
+  },
+  "mo_td3_bn": {
+   "focus": 0.2662978996312329,
+   "violations": 0.35486111111111107,
+   "p95": 2080.1432821364247,
+   "cost": 4.446564670138888,
+   "score": 0.3977212996272115,
+   "per_service": {
+    "gateway-service": {
+     "focus": 0.2350889850889851,
+     "violations": 0.9499999999999998,
+     "p95": 5455.370776633871,
+     "cost": 5.189675781249999,
+     "score": 0.5608844054215066
+    },
+    "catalog-service": {
+     "focus": 0.2638888888888889,
+     "violations": 0.22083333333333333,
+     "p95": 1325.2414805154117,
+     "cost": 4.43133984375,
+     "score": 0.36858067018909163
+    },
+    "auth-service": {
+     "focus": 0.2654761904761904,
+     "violations": 0.24166666666666667,
+     "p95": 1373.6641137635042,
+     "cost": 4.207602864583333,
+     "score": 0.354486112045648
+    },
+    "inventory-service": {
+     "focus": 0.26111111111111107,
+     "violations": 0.23333333333333336,
+     "p95": 1451.466751243869,
+     "cost": 4.277390625,
+     "score": 0.36850371261583575
+    },
+    "pricing-service": {
+     "focus": 0.28333333333333327,
+     "violations": 0.23333333333333336,
+     "p95": 1417.7135803071899,
+     "cost": 4.276580729166667,
+     "score": 0.3684006650321832
+    },
+    "user-service": {
+     "focus": 0.28888888888888886,
+     "violations": 0.25,
+     "p95": 1457.4029903547016,
+     "cost": 4.296798177083333,
+     "score": 0.36547223245900357
+    }
+   }
+  },
+  "mo_td3_full": {
+   "focus": 0.34451058201058204,
+   "violations": 0.41180555555555554,
+   "p95": 2715.7655104740306,
+   "cost": 4.271312499999999,
+   "score": 0.42713374212324967,
+   "per_service": {
+    "gateway-service": {
+     "focus": 0.26865079365079364,
+     "violations": 0.8916666666666666,
+     "p95": 5964.050832536454,
+     "cost": 4.964522135416666,
+     "score": 0.5852390476997175
+    },
+    "catalog-service": {
+     "focus": 0.3138888888888889,
+     "violations": 0.38333333333333336,
+     "p95": 2994.5152813408695,
+     "cost": 4.1119882812499995,
+     "score": 0.43662113795396124
+    },
+    "auth-service": {
+     "focus": 0.3603174603174603,
+     "violations": 0.3999999999999999,
+     "p95": 1747.5867104952165,
+     "cost": 4.148358072916666,
+     "score": 0.42654369555403004
+    },
+    "inventory-service": {
+     "focus": 0.37222222222222223,
+     "violations": 0.2708333333333333,
+     "p95": 2143.474522064604,
+     "cost": 4.131496093749999,
+     "score": 0.3714560646382188
+    },
+    "pricing-service": {
+     "focus": 0.3194444444444444,
+     "violations": 0.23750000000000002,
+     "p95": 1633.6628458699304,
+     "cost": 4.1085,
+     "score": 0.36285378060494544
+    },
+    "user-service": {
+     "focus": 0.43253968253968256,
+     "violations": 0.2875,
+     "p95": 1811.302870537109,
+     "cost": 4.163010416666666,
+     "score": 0.3800887262886252
+    }
+   }
+  },
+  "mo_td3_large": {
+   "focus": 0.30609567901234563,
+   "violations": 0.5902777777777778,
+   "p95": 4287.587900732826,
+   "cost": 4.331322916666666,
+   "score": 0.5176983515818075,
+   "per_service": {
+    "gateway-service": {
+     "focus": 0.29497354497354494,
+     "violations": 0.9791666666666666,
+     "p95": 5946.239111436349,
+     "cost": 5.254250000000001,
+     "score": 0.7476329190269301
+    },
+    "catalog-service": {
+     "focus": 0.2611111111111111,
+     "violations": 0.4458333333333333,
+     "p95": 4082.9177180347065,
+     "cost": 4.26210546875,
+     "score": 0.46894647118199595
+    },
+    "auth-service": {
+     "focus": 0.27678571428571425,
+     "violations": 0.6916666666666668,
+     "p95": 4462.385743121202,
+     "cost": 4.284106770833333,
+     "score": 0.5351720520537261
+    },
+    "inventory-service": {
+     "focus": 0.3333333333333333,
+     "violations": 0.41250000000000003,
+     "p95": 3194.31035069405,
+     "cost": 4.089055989583333,
+     "score": 0.4475015495398145
+    },
+    "pricing-service": {
+     "focus": 0.3333333333333333,
+     "violations": 0.44166666666666665,
+     "p95": 4163.971826015803,
+     "cost": 4.06471484375,
+     "score": 0.4616296996331819
+    },
+    "user-service": {
+     "focus": 0.337037037037037,
+     "violations": 0.5708333333333333,
+     "p95": 3875.702655094843,
+     "cost": 4.033704427083333,
+     "score": 0.44530741805519747
+    }
+   }
+  }
+ }
+}

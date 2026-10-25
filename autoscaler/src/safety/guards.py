@@ -63,6 +63,7 @@ class SafetyGuard:
     _last_scale_up_step: dict = field(default_factory=dict)
     _last_resize_step: dict = field(default_factory=dict)
     _undo: dict = field(default_factory=dict)         # {svc: (down, up, resize) timestamps before the last filter()}
+    _idle_streak: dict = field(default_factory=dict)  # {svc: consecutive steps with utilisation below IDLE_RECLAIM_UTIL}
     _consecutive_violations: int = 0
     _breaker_open: bool = False
     _breaker_opened_at_step: int = -1
@@ -114,7 +115,8 @@ class SafetyGuard:
                 notes.append(f"clamped replicas to [{self.min_replicas},{self.max_replicas}]")
                 a["dr"] = clamped - cur["replicas"]
             a["cpu"] = quantize(a["cpu"], config.CPU_QUANTUM, config.CPU_MIN, config.CPU_MAX)
-            a["mem"] = quantize(a["mem"], config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
+            a["mem"] = (quantize(a["mem"], config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
+                        if config.ALLOW_MEMORY_RESIZE else cur["mem"])       # locked memory is left exactly as it is, not rounded to the grid
 
             if not physical_only:
                 # 2. memory floor ------------------------------------------------
@@ -124,6 +126,26 @@ class SafetyGuard:
                 if a["mem"] < floor and a["mem"] < cur["mem"]:
                     notes.append(f"memory floor {floor:.0f} MiB (working set {working_set:.0f})")
                     a["mem"] = max(a["mem"], min(floor, cur["mem"]))
+
+                # 2b. demand gate: capacity goes where the load is -----------------
+                util = cur.get("utilization", 0.0)
+                if (a["dr"] > 0 or a["cpu"] > cur["cpu"] + 1e-9) and util < config.SCALE_UP_MIN_UTIL:
+                    notes.append(f"scale-up blocked: no demand (utilisation {util:.2f} < {config.SCALE_UP_MIN_UTIL:.2f})")
+                    a["dr"], a["cpu"] = min(a["dr"], 0), min(a["cpu"], cur["cpu"])
+                if (a["dr"] < 0 or a["cpu"] < cur["cpu"] - 1e-9) and util > config.SCALE_DOWN_MAX_UTIL:
+                    notes.append(f"scale-down blocked: service is busy (utilisation {util:.2f} > {config.SCALE_DOWN_MAX_UTIL:.2f})")
+                    a["dr"], a["cpu"] = max(a["dr"], 0), max(a["cpu"], cur["cpu"])
+
+                if not config.ALLOW_CPU_DECREASE and a["cpu"] < cur["cpu"] - 1e-9:
+                    notes.append("cpu decrease disabled (ALLOW_CPU_DECREASE=0)")
+                    a["cpu"] = cur["cpu"]
+
+                # 2c. idle reclaim: a service that has been idle for a while gives a replica back (restarts nothing) -----
+                streak = self._idle_streak[svc] = (self._idle_streak.get(svc, 0) + 1) if cur.get("utilization", 1.0) < config.IDLE_RECLAIM_UTIL else 0
+                if (config.IDLE_RECLAIM_STEPS > 0 and streak >= config.IDLE_RECLAIM_STEPS and a["dr"] >= 0
+                        and cur["replicas"] > self.min_replicas):
+                    notes.append(f"idle reclaim: utilisation below {config.IDLE_RECLAIM_UTIL:.2f} for {streak} steps")
+                    a["dr"] = -1
 
                 # 3. asymmetric scale-down --------------------------------------
                 if a["dr"] < 0:
@@ -159,6 +181,7 @@ class SafetyGuard:
 
         # 5. cluster budget -------------------------------------------------------
         self._enforce_budget(approved, current, reasons)
+        self._limit_resizes(approved, current, reasons)
 
         # bookkeeping only for what actually goes through (a caller that vetoes an action afterwards calls revoke())
         self._undo = {}
@@ -173,6 +196,16 @@ class SafetyGuard:
             if a["cpu"] != cur["cpu"] or a["mem"] != cur["mem"]:
                 self._last_resize_step[svc] = step
         return approved, reasons
+
+    def _limit_resizes(self, approved, current, reasons):
+        """At most MAX_RESIZES_PER_STEP services are resized in one step - the busiest first - so a resize that restarts pods can never hit many services at once."""
+        limit = config.MAX_RESIZES_PER_STEP
+        if limit <= 0:
+            return
+        resized = [s for s, a in approved.items() if abs(a["cpu"] - current[s]["cpu"]) > 1e-9 or abs(a["mem"] - current[s]["mem"]) > 1e-9]
+        for s in sorted(resized, key=lambda x: -current[x].get("utilization", 0.0))[limit:]:
+            approved[s]["cpu"], approved[s]["mem"] = current[s]["cpu"], current[s]["mem"]
+            reasons[s] = (reasons[s] + "; " if s in reasons else "") + f"resize limit: at most {limit} per step"
 
     def revoke(self, svc: str, scale: bool = False, resize: bool = False):
         """Undo the bookkeeping of the last filter() for `svc`: the action the guard approved was vetoed by the caller (node
@@ -235,6 +268,7 @@ class SafetyGuard:
 
     def reset(self):
         self._undo = {}
+        self._idle_streak.clear()
         self._last_scale_down_step.clear()
         self._last_scale_up_step.clear()
         self._last_resize_step.clear()

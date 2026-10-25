@@ -224,7 +224,7 @@ def history(what: str, cluster: str | None = None, hours: float = Query(24.0, gt
         elif what == "metrics":
             data = queries.metrics(*args, service=service, limit=limit)
         elif what == "actions":
-            data = queries.actions(*args, service=service, outcome=outcome, limit=limit)
+            data = queries.actions(*args, service=service, outcome=outcome, changed_only=changed_only, limit=limit)
         elif what == "violations":
             data = queries.violations(*args, limit=limit)
         elif what == "critical-path":

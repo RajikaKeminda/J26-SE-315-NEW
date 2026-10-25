@@ -1,0 +1,318 @@
+{
+  "arm": "mo_td3_full",
+  "seed": 41,
+  "episodes": 1200,
+  "history": [
+    {
+      "episode": 50,
+      "val_scalarized": 0.49288903635281783,
+      "val_p95_ms": 5090.801861036375,
+      "val_cost": 6.649405048076924,
+      "val_slo_violation": 0.632051282051282,
+      "seconds": 27.0,
+      "critic_loss": 0.4157,
+      "q_mean": -8.3886,
+      "actor_loss": 5.7282
+    },
+    {
+      "episode": 100,
+      "val_scalarized": 0.4874262305406423,
+      "val_p95_ms": 5232.414982635745,
+      "val_cost": 6.852048277243588,
+      "val_slo_violation": 0.592948717948718,
+      "seconds": 90.2,
+      "critic_loss": 0.4313,
+      "q_mean": -8.6602,
+      "actor_loss": 6.2547
+    },
+    {
+      "episode": 150,
+      "val_scalarized": 0.4787696515902495,
+      "val_p95_ms": 5329.013915686498,
+      "val_cost": 7.162118389423076,
+      "val_slo_violation": 0.5371794871794873,
+      "seconds": 211.5,
+      "critic_loss": 0.5766,
+      "q_mean": -9.3745,
+      "actor_loss": 6.6964
+    },
+    {
+      "episode": 200,
+      "val_scalarized": 0.48350289120123946,
+      "val_p95_ms": 5649.381478810269,
+      "val_cost": 7.2727053285256416,
+      "val_slo_violation": 0.5282051282051282,
+      "seconds": 308.8,
+      "critic_loss": 0.6451,
+      "q_mean": -9.4307,
+      "actor_loss": 7.3225
+    },
+    {
+      "episode": 250,
+      "val_scalarized": 0.4796606298440542,
+      "val_p95_ms": 5203.1993340730705,
+      "val_cost": 7.071450320512819,
+      "val_slo_violation": 0.5371794871794873,
+      "seconds": 375.3,
+      "critic_loss": 0.5841,
+      "q_mean": -9.2921,
+      "actor_loss": 7.9896
+    },
+    {
+      "episode": 300,
+      "val_scalarized": 0.4855799957727775,
+      "val_p95_ms": 4858.558947865018,
+      "val_cost": 7.1968770032051275,
+      "val_slo_violation": 0.5512820512820512,
+      "seconds": 448.2,
+      "critic_loss": 0.432,
+      "q_mean": -9.4179,
+      "actor_loss": 7.3978
+    },
+    {
+      "episode": 350,
+      "val_scalarized": 0.4796154437920986,
+      "val_p95_ms": 5582.793536184735,
+      "val_cost": 6.879190705128205,
+      "val_slo_violation": 0.5557692307692308,
+      "seconds": 519.3,
+      "critic_loss": 0.486,
+      "q_mean": -9.2186,
+      "actor_loss": 7.9758
+    },
+    {
+      "episode": 400,
+      "val_scalarized": 0.5318713520581905,
+      "val_p95_ms": 6456.224296103169,
+      "val_cost": 6.818601762820512,
+      "val_slo_violation": 0.692948717948718,
+      "seconds": 585.4,
+      "critic_loss": 0.6284,
+      "q_mean": -9.3478,
+      "actor_loss": 8.2778
+    },
+    {
+      "episode": 450,
+      "val_scalarized": 0.5225051091267512,
+      "val_p95_ms": 5000.510053771357,
+      "val_cost": 6.842113381410256,
+      "val_slo_violation": 0.7032051282051281,
+      "seconds": 651.9,
+      "critic_loss": 0.4608,
+      "q_mean": -9.6272,
+      "actor_loss": 7.7387
+    },
+    {
+      "episode": 500,
+      "val_scalarized": 0.5333499495799725,
+      "val_p95_ms": 5467.183504798354,
+      "val_cost": 6.618142027243589,
+      "val_slo_violation": 0.7230769230769231,
+      "seconds": 716.8,
+      "critic_loss": 0.4746,
+      "q_mean": -9.5732,
+      "actor_loss": 8.3851
+    },
+    {
+      "episode": 550,
+      "val_scalarized": 0.5403589174533502,
+      "val_p95_ms": 6001.406311921238,
+      "val_cost": 6.5952303685897435,
+      "val_slo_violation": 0.6993589743589743,
+      "seconds": 784.2,
+      "critic_loss": 0.479,
+      "q_mean": -9.846,
+      "actor_loss": 8.6999
+    },
+    {
+      "episode": 600,
+      "val_scalarized": 0.5283168099629574,
+      "val_p95_ms": 5260.694484887345,
+      "val_cost": 6.547832532051283,
+      "val_slo_violation": 0.7121794871794871,
+      "seconds": 851.1,
+      "critic_loss": 0.5296,
+      "q_mean": -9.8513,
+      "actor_loss": 8.7659
+    },
+    {
+      "episode": 650,
+      "val_scalarized": 0.5240373183519413,
+      "val_p95_ms": 5718.134357836936,
+      "val_cost": 6.319154647435898,
+      "val_slo_violation": 0.7314102564102564,
+      "seconds": 916.6,
+      "critic_loss": 0.3726,
+      "q_mean": -10.5994,
+      "actor_loss": 9.867
+    },
+    {
+      "episode": 700,
+      "val_scalarized": 0.5492078956121053,
+      "val_p95_ms": 9361.309480035745,
+      "val_cost": 5.236561498397436,
+      "val_slo_violation": 0.825,
+      "seconds": 985.6,
+      "critic_loss": 0.3969,
+      "q_mean": -10.4367,
+      "actor_loss": 9.1914
+    },
+    {
+      "episode": 750,
+      "val_scalarized": 0.5368044422223018,
+      "val_p95_ms": 8238.757473340847,
+      "val_cost": 5.13596454326923,
+      "val_slo_violation": 0.8198717948717947,
+      "seconds": 1071.2,
+      "critic_loss": 0.3258,
+      "q_mean": -10.3619,
+      "actor_loss": 8.6566
+    },
+    {
+      "episode": 800,
+      "val_scalarized": 0.5168384474057417,
+      "val_p95_ms": 7163.572270652566,
+      "val_cost": 5.296597556089744,
+      "val_slo_violation": 0.782051282051282,
+      "seconds": 1149.8,
+      "critic_loss": 0.3764,
+      "q_mean": -10.2743,
+      "actor_loss": 9.4161
+    },
+    {
+      "episode": 850,
+      "val_scalarized": 0.5162576941343454,
+      "val_p95_ms": 8479.802795636213,
+      "val_cost": 5.103516626602564,
+      "val_slo_violation": 0.8012820512820513,
+      "seconds": 1222.6,
+      "critic_loss": 0.3627,
+      "q_mean": -10.1176,
+      "actor_loss": 8.7619
+    },
+    {
+      "episode": 900,
+      "val_scalarized": 0.5195486159660878,
+      "val_p95_ms": 8204.656152139622,
+      "val_cost": 5.05543469551282,
+      "val_slo_violation": 0.8326923076923076,
+      "seconds": 1287.5,
+      "critic_loss": 0.3875,
+      "q_mean": -10.1896,
+      "actor_loss": 9.7237
+    },
+    {
+      "episode": 950,
+      "val_scalarized": 0.5286777432148274,
+      "val_p95_ms": 11183.613056252729,
+      "val_cost": 4.735474759615385,
+      "val_slo_violation": 0.8378205128205127,
+      "seconds": 1353.7,
+      "critic_loss": 0.3777,
+      "q_mean": -10.131,
+      "actor_loss": 9.2558
+    },
+    {
+      "episode": 1000,
+      "val_scalarized": 0.5403973276798542,
+      "val_p95_ms": 13331.79463847663,
+      "val_cost": 4.4073717948717945,
+      "val_slo_violation": 0.8467948717948718,
+      "seconds": 1445.9,
+      "critic_loss": 0.3094,
+      "q_mean": -9.9977,
+      "actor_loss": 9.3999
+    },
+    {
+      "episode": 1050,
+      "val_scalarized": 0.5450129195665702,
+      "val_p95_ms": 14697.966012719473,
+      "val_cost": 4.215658052884615,
+      "val_slo_violation": 0.8512820512820513,
+      "seconds": 1720.3,
+      "critic_loss": 0.273,
+      "q_mean": -10.2568,
+      "actor_loss": 9.1343
+    },
+    {
+      "episode": 1100,
+      "val_scalarized": 0.5382870007783939,
+      "val_p95_ms": 14790.292729840772,
+      "val_cost": 4.284301883012821,
+      "val_slo_violation": 0.833974358974359,
+      "seconds": 1890.3,
+      "critic_loss": 0.3492,
+      "q_mean": -10.2063,
+      "actor_loss": 8.8031
+    },
+    {
+      "episode": 1150,
+      "val_scalarized": 0.536469490100176,
+      "val_p95_ms": 13781.031119591893,
+      "val_cost": 4.334400040064103,
+      "val_slo_violation": 0.8378205128205127,
+      "seconds": 2021.9,
+      "critic_loss": 0.251,
+      "q_mean": -10.0696,
+      "actor_loss": 9.3125
+    },
+    {
+      "episode": 1200,
+      "val_scalarized": 0.535314645140599,
+      "val_p95_ms": 13347.680405815347,
+      "val_cost": 4.62943609775641,
+      "val_slo_violation": 0.814102564102564,
+      "seconds": 2141.5,
+      "critic_loss": 0.2954,
+      "q_mean": -10.0735,
+      "actor_loss": 9.2396
+    }
+  ],
+  "best_val_scalarized": 0.4787696515902495,
+  "selected_fresh_val_scalarized": 0.48001683293244773,
+  "eval_preference": [
+    0.5,
+    0.35,
+    0.15
+  ],
+  "topology_training": "random 4-14 services, 2-5 tiers + 1 target topologies p=0.6",
+  "init_from": "models/mo_td3_bn.pt",
+  "hparams": {
+    "n_step": 3,
+    "explore_noise": 0.2,
+    "eps_start": 0.2,
+    "eps_end": 0.03,
+    "bc_weight": 1.0,
+    "bc_floor": 0.3,
+    "bc_decay_frac": 0.8,
+    "demo_target_range": [
+      0.35,
+      0.65
+    ],
+    "demo_cpus": [
+      0.25,
+      0.5,
+      1.0
+    ],
+    "default_pref_prob": 0.3,
+    "relabel_prob": 0.5,
+    "val_episodes": 48,
+    "top_k": 3,
+    "final_val_episodes": 48,
+    "fixed_topology_prob": 0.0,
+    "replica_head": "round",
+    "actor_lr": 5e-05,
+    "critic_lr": 0.0002,
+    "batch_size": 128,
+    "tau": 0.005,
+    "gamma": 0.95,
+    "policy_delay": 2,
+    "grad_clip": 5.0,
+    "randomize_initial": true,
+    "hot_prob": 0.7,
+    "hot_demand": [
+      0.25,
+      1.6
+    ]
+  }
+}
