@@ -29,11 +29,11 @@ from src import config
 from src.baselines.rule_based import HPABaseline, ThresholdBaseline
 from src.evaluation.metrics import evaluate_controller
 from src.rl_agent.controllers import RLController
-from src.rl_agent.env import AutoscalerEnv
+from src.rl_agent.env import AutoscalerEnv, topology_base_rps
 from src.rl_agent.mo_td3 import MOTD3Agent
 from src.rl_agent.replay import EpisodeReplay
 from src.simulation.simulator import random_topology
-from src.topologies import DEMO6
+from src.topologies import DEMO6, bottleneck_scenario
 
 # arm -> options.  `topology/ehg/replica_only` select the architecture ablations,
 # `fixed_w` makes the reward single-objective, `demos` toggles the HPA-demonstration seeding
@@ -95,6 +95,8 @@ class HParams:
     policy_delay: int = config.TD3_POLICY_DELAY
     grad_clip: float = 5.0
     randomize_initial: bool = False     # start every service at its own CPU limit (domain randomisation)
+    hot_prob: float = 0.0               # share of episodes in which ONE random service is made the only bottleneck (topologies.bottleneck_scenario)
+    hot_demand: tuple = (0.25, 1.6)     # cores the bottleneck service needs (it starts with a 0.1-core limit)
 
 
 def sample_preference(rng, fixed_w=None, default_prob=0.3):
@@ -230,6 +232,12 @@ def train_agent(arm="mo_td3_full", episodes=1000, seed=0, demo_episodes=400, war
         topo = DEMO6 if rng.random() < hp.fixed_topology_prob else None
         if target_topologies and rng.random() < target_prob:
             topo = target_topologies[int(rng.integers(len(target_topologies)))]
+        if hp.hot_prob and rng.random() < hp.hot_prob:
+            # a BOTTLENECK episode: the request mix is shifted towards one random service and the traffic scaled until it is the only saturated one
+            # (topologies.bottleneck_scenario), on whatever application this episode would have used - so the agent can only be right by reading where the load is
+            base = topo if topo is not None else random_topology(rng, *sizes)
+            scenario, _ = bottleneck_scenario(base, rng, topology_base_rps(base), demand_range=hp.hot_demand)
+            topo = scenario or topo
         obs_list, idx_list, cont_list, rew = run_collect(env, policy_fn, topology=topo)
         replay.add_episode(obs_list, idx_list, cont_list, rew, w=w, demo=False)
         if recorder is not None:

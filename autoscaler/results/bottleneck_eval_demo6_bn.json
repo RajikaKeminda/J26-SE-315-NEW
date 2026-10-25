@@ -1,0 +1,264 @@
+{
+ "topology": "demo6",
+ "bottleneck_services": [
+  "gateway-service",
+  "catalog-service",
+  "auth-service",
+  "inventory-service",
+  "pricing-service",
+  "user-service"
+ ],
+ "episodes_per_service": 6,
+ "random_focus_baseline": 0.16666666666666666,
+ "scenarios": {
+  "gateway-service": {
+   "load_scale": 3.24,
+   "start_cpu": {
+    "gateway-service": 0.1
+   }
+  },
+  "catalog-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "catalog-service": 0.1
+   }
+  },
+  "auth-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "auth-service": 0.1
+   }
+  },
+  "inventory-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "inventory-service": 0.1
+   }
+  },
+  "pricing-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "pricing-service": 0.1
+   }
+  },
+  "user-service": {
+   "load_scale": 1.94,
+   "start_cpu": {
+    "user-service": 0.1
+   }
+  }
+ },
+ "regime": {
+  "STEP_SECONDS": 10.0,
+  "POD_STARTUP_SECONDS": 4.0,
+  "CPU_MAX": 1.0,
+  "MAX_REPLICAS": 8,
+  "ALLOW_MEMORY_RESIZE": true
+ },
+ "controllers": {
+  "hpa (tuned)": {
+   "focus": 0.3374559082892416,
+   "violations": 1.0,
+   "p95": 5396.75341912929,
+   "cost": 4.431026041666665,
+   "score": 0.7682613851017166,
+   "per_service": {
+    "gateway-service": {
+     "focus": 0.3087301587301587,
+     "violations": 1.0,
+     "p95": 12838.93373657374,
+     "cost": 4.96759375,
+     "score": 0.8145116524043686
+    },
+    "catalog-service": {
+     "focus": 0.40277777777777773,
+     "violations": 1.0,
+     "p95": 4100.305017830936,
+     "cost": 4.201015624999999,
+     "score": 0.7615532737884932
+    },
+    "auth-service": {
+     "focus": 0.3148148148148148,
+     "violations": 1.0,
+     "p95": 3835.1322552864876,
+     "cost": 4.329703124999999,
+     "score": 0.7613496490009859
+    },
+    "inventory-service": {
+     "focus": 0.3365079365079365,
+     "violations": 1.0,
+     "p95": 3849.2113486678013,
+     "cost": 4.39071875,
+     "score": 0.7562039378859948
+    },
+    "pricing-service": {
+     "focus": 0.3365079365079365,
+     "violations": 1.0,
+     "p95": 3848.3362802715765,
+     "cost": 4.39071875,
+     "score": 0.7568199180753133
+    },
+    "user-service": {
+     "focus": 0.3253968253968254,
+     "violations": 1.0,
+     "p95": 3908.6018761451905,
+     "cost": 4.306406249999999,
+     "score": 0.7591298794551437
+    }
+   }
+  },
+  "static": {
+   "focus": NaN,
+   "violations": 1.0,
+   "p95": 22190.683346369828,
+   "cost": 2.8949999999999996,
+   "score": 0.7301270618584734,
+   "per_service": {
+    "gateway-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22387.71708127072,
+     "cost": 2.8949999999999996,
+     "score": 0.6885431434109002
+    },
+    "catalog-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 21876.938079851447,
+     "cost": 2.8949999999999996,
+     "score": 0.7291371364176132
+    },
+    "auth-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22251.953949287545,
+     "cost": 2.8949999999999996,
+     "score": 0.7379855269945378
+    },
+    "inventory-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22207.025529206378,
+     "cost": 2.8949999999999996,
+     "score": 0.7437749898319442
+    },
+    "pricing-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22228.021229978545,
+     "cost": 2.8949999999999996,
+     "score": 0.7433425735768707
+    },
+    "user-service": {
+     "focus": NaN,
+     "violations": 1.0,
+     "p95": 22192.444208624325,
+     "cost": 2.8949999999999996,
+     "score": 0.7379790009189748
+    }
+   }
+  },
+  "mo_td3_bn": {
+   "focus": 0.18763359080588238,
+   "violations": 0.23888888888888885,
+   "p95": 4946.646255139039,
+   "cost": 4.235877604166666,
+   "score": 0.36587981544000425,
+   "per_service": {
+    "gateway-service": {
+     "focus": 0.18676939003025958,
+     "violations": 0.39166666666666666,
+     "p95": 8310.507881850253,
+     "cost": 4.8963867187500005,
+     "score": 0.4602335672771542
+    },
+    "catalog-service": {
+     "focus": 0.23194530971065497,
+     "violations": 0.20833333333333334,
+     "p95": 4767.6003168870675,
+     "cost": 4.3488671875,
+     "score": 0.3630622803600305
+    },
+    "auth-service": {
+     "focus": 0.1462974653024365,
+     "violations": 0.19999999999999998,
+     "p95": 5026.015079010711,
+     "cost": 3.8895794270833335,
+     "score": 0.3335778498764093
+    },
+    "inventory-service": {
+     "focus": 0.21364342179559573,
+     "violations": 0.21666666666666665,
+     "p95": 3227.410171748419,
+     "cost": 4.193766927083334,
+     "score": 0.35267037212563307
+    },
+    "pricing-service": {
+     "focus": 0.1983727085271708,
+     "violations": 0.21666666666666665,
+     "p95": 3293.223935126792,
+     "cost": 4.207414062500001,
+     "score": 0.3530544522875494
+    },
+    "user-service": {
+     "focus": 0.14877324946917667,
+     "violations": 0.19999999999999998,
+     "p95": 5055.120146210985,
+     "cost": 3.879251302083334,
+     "score": 0.33268037071324913
+    }
+   }
+  },
+  "mo_td3_full": {
+   "focus": 0.18429525721192386,
+   "violations": 0.31111111111111117,
+   "p95": 3510.6922244432494,
+   "cost": 4.616582682291667,
+   "score": 0.4259275017535605,
+   "per_service": {
+    "gateway-service": {
+     "focus": 0.1069023569023569,
+     "violations": 0.2291666666666667,
+     "p95": 3647.5698287223645,
+     "cost": 5.777841145833334,
+     "score": 0.4561487412566047
+    },
+    "catalog-service": {
+     "focus": 0.09583333333333333,
+     "violations": 0.41250000000000003,
+     "p95": 4459.701693637123,
+     "cost": 4.513454427083333,
+     "score": 0.4698852847235894
+    },
+    "auth-service": {
+     "focus": 0.1488095238095238,
+     "violations": 0.3458333333333334,
+     "p95": 3329.1082880820854,
+     "cost": 4.375671875000001,
+     "score": 0.4375050353288841
+    },
+    "inventory-service": {
+     "focus": 0.28333333333333327,
+     "violations": 0.2916666666666667,
+     "p95": 3391.864890947803,
+     "cost": 4.2997708333333335,
+     "score": 0.39672589339372594
+    },
+    "pricing-service": {
+     "focus": 0.2486707736707737,
+     "violations": 0.28750000000000003,
+     "p95": 3314.849510123362,
+     "cost": 4.365067708333334,
+     "score": 0.3996515204131079
+    },
+    "user-service": {
+     "focus": 0.2222222222222222,
+     "violations": 0.3,
+     "p95": 2921.059135146757,
+     "cost": 4.367690104166667,
+     "score": 0.39564853540545086
+    }
+   }
+  }
+ }
+}

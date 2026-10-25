@@ -1,0 +1,59 @@
+{
+ "topology": "trainticket-sim",
+ "bottleneck_services": [
+  "ts-basic-service",
+  "ts-contacts-service",
+  "ts-order-service",
+  "ts-preserve-service",
+  "ts-route-service",
+  "ts-seat-service",
+  "ts-security-service",
+  "ts-station-service",
+  "ts-train-service",
+  "ts-travel-service"
+ ],
+ "episodes_per_service": 4,
+ "demand_cores": 1.2,
+ "random_focus_baseline": 0.1,
+ "regime": {
+  "STEP_SECONDS": 30.0,
+  "POD_STARTUP_SECONDS": 95.0,
+  "CPU_MAX": 1.0,
+  "MAX_REPLICAS": 2,
+  "ALLOW_MEMORY_RESIZE": false
+ },
+ "controllers": {
+  "hpa (tuned)": {
+   "focus": 0.1,
+   "episodes_with_no_added_capacity": 0,
+   "violations": 0.6925000000000001,
+   "p95": 1104.2019910783586,
+   "cost": 13.21875,
+   "score": 0.5371548657182363
+  },
+  "mo_td3_trainticket_cpu": {
+   "focus": 0.10992778055278056,
+   "episodes_with_no_added_capacity": 0,
+   "violations": 0.704375,
+   "p95": 1155.9105256724772,
+   "cost": 11.6689658203125,
+   "score": 0.4939434958240403
+  },
+  "mo_td3_trainticket_cap6": {
+   "focus": 0.35526315789473684,
+   "episodes_with_no_added_capacity": 2,
+   "violations": 0.849375,
+   "p95": 1853.2496015725396,
+   "cost": 13.114790039062502,
+   "score": 0.5815086264527366
+  },
+  "mo_td3_large": {
+   "focus": 0.22798049173049173,
+   "episodes_with_no_added_capacity": 0,
+   "violations": 0.881875,
+   "p95": 1725.5163668515524,
+   "cost": 11.690669921875,
+   "score": 0.5462259772430397
+  }
+ }
+}

@@ -126,6 +126,15 @@ class SafetyGuard:
                     notes.append(f"memory floor {floor:.0f} MiB (working set {working_set:.0f})")
                     a["mem"] = max(a["mem"], min(floor, cur["mem"]))
 
+                # 2b. demand gate: capacity goes where the load is -----------------
+                util = cur.get("utilization", 0.0)
+                if (a["dr"] > 0 or a["cpu"] > cur["cpu"] + 1e-9) and util < config.SCALE_UP_MIN_UTIL:
+                    notes.append(f"scale-up blocked: no demand (utilisation {util:.2f} < {config.SCALE_UP_MIN_UTIL:.2f})")
+                    a["dr"], a["cpu"] = min(a["dr"], 0), min(a["cpu"], cur["cpu"])
+                if (a["dr"] < 0 or a["cpu"] < cur["cpu"] - 1e-9) and util > config.SCALE_DOWN_MAX_UTIL:
+                    notes.append(f"scale-down blocked: service is busy (utilisation {util:.2f} > {config.SCALE_DOWN_MAX_UTIL:.2f})")
+                    a["dr"], a["cpu"] = max(a["dr"], 0), max(a["cpu"], cur["cpu"])
+
                 # 3. asymmetric scale-down --------------------------------------
                 if a["dr"] < 0:
                     since = step - self._last_scale_down_step.get(svc, -999)

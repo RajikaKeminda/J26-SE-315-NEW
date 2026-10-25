@@ -1,0 +1,205 @@
+{
+ "topology": "trainticket-sim",
+ "bottleneck_services": [
+  "ts-basic-service",
+  "ts-order-service"
+ ],
+ "episodes_per_service": 6,
+ "scenarios": {
+  "ts-basic-service": {
+   "load_scale": 2.3,
+   "start_cpu": {
+    "ts-basic-service": 0.1
+   }
+  },
+  "ts-order-service": {
+   "load_scale": 1.0,
+   "start_cpu": {
+    "ts-order-service": 0.1
+   }
+  }
+ },
+ "regime": {
+  "STEP_SECONDS": 30.0,
+  "POD_STARTUP_SECONDS": 95.0,
+  "CPU_MAX": 1.0,
+  "MAX_REPLICAS": 2,
+  "ALLOW_MEMORY_RESIZE": false
+ },
+ "controllers": {
+  "hpa (tuned)": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 41.0,
+   "violations": 1.0,
+   "p95": 17407.825340698386,
+   "cost": 12.34296875,
+   "score": 0.7792382107756968,
+   "per_service": {
+    "ts-basic-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 8048.400989765057,
+     "cost": 12.8203125,
+     "score": 0.712604526557726
+    },
+    "ts-order-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 26767.249691631714,
+     "cost": 11.865625,
+     "score": 0.8458718949936674
+    }
+   }
+  },
+  "static": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 41.0,
+   "violations": 1.0,
+   "p95": 21500.522503657136,
+   "cost": 11.3671875,
+   "score": 0.8422031088865382,
+   "per_service": {
+    "ts-basic-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 17439.495534475933,
+     "cost": 11.3671875,
+     "score": 0.8508560405238473
+    },
+    "ts-order-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 25561.549472838335,
+     "cost": 11.3671875,
+     "score": 0.833550177249229
+    }
+   }
+  },
+  "bn_tt": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 25.333333333333336,
+   "violations": 0.7666666666666666,
+   "p95": 7783.3328109861395,
+   "cost": 9.6066796875,
+   "score": 0.49908475387661244,
+   "per_service": {
+    "ts-basic-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 23.0,
+     "violations": 0.5625,
+     "p95": 6904.717166934574,
+     "cost": 9.729609374999999,
+     "score": 0.4827789015512453
+    },
+    "ts-order-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 27.666666666666668,
+     "violations": 0.9708333333333333,
+     "p95": 8661.948455037704,
+     "cost": 9.48375,
+     "score": 0.5153906062019795
+    }
+   }
+  },
+  "bn_demo": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 23.666666666666664,
+   "violations": 0.6770833333333333,
+   "p95": 7566.338743685159,
+   "cost": 10.704794921874997,
+   "score": 0.5340058264283456,
+   "per_service": {
+    "ts-basic-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 9.166666666666666,
+     "violations": 0.3666666666666667,
+     "p95": 6224.7909644424335,
+     "cost": 11.237486979166663,
+     "score": 0.46639768188382064
+    },
+    "ts-order-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 38.166666666666664,
+     "violations": 0.9874999999999999,
+     "p95": 8907.886522927884,
+     "cost": 10.172102864583332,
+     "score": 0.6016139709728706
+    }
+   }
+  },
+  "cpu": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 16.416666666666668,
+   "violations": 0.7333333333333333,
+   "p95": 7597.970966229665,
+   "cost": 10.480384114583334,
+   "score": 0.4974851014108138,
+   "per_service": {
+    "ts-basic-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 5.166666666666667,
+     "violations": 0.4958333333333333,
+     "p95": 6533.436905174301,
+     "cost": 10.703606770833334,
+     "score": 0.45847773424450206
+    },
+    "ts-order-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 27.666666666666668,
+     "violations": 0.9708333333333333,
+     "p95": 8662.50502728503,
+     "cost": 10.257161458333332,
+     "score": 0.5364924685771256
+    }
+   }
+  },
+  "cap6": {
+   "hit": 1.0,
+   "idle_add_share": 0.0,
+   "steps_to_slo": 41.0,
+   "violations": 1.0,
+   "p95": 16883.96674208938,
+   "cost": 12.238525390625,
+   "score": 0.7883332528447919,
+   "per_service": {
+    "ts-basic-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 6999.939122495301,
+     "cost": 12.75830078125,
+     "score": 0.7341674630598781
+    },
+    "ts-order-service": {
+     "hit": 1.0,
+     "idle_add_share": 0.0,
+     "steps_to_slo": 41.0,
+     "violations": 1.0,
+     "p95": 26767.994361683453,
+     "cost": 11.71875,
+     "score": 0.8424990426297058
+    }
+   }
+  }
+ }
+}
