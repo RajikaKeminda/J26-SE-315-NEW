@@ -1,4 +1,29 @@
 run_id,step,ts,type,severity,detail
+6f0c2e7b-4a0c-47fe-8543-8ad436668365,,2026-10-25 14:06:35.763187+00:00,agent_stop,info,{}
+6f0c2e7b-4a0c-47fe-8543-8ad436668365,,2026-10-25 13:47:47.518976+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+f4d26994-66e4-41eb-af76-e4e6ce4974f5,,2026-10-25 13:43:40.700385+00:00,agent_stop,info,{}
+f4d26994-66e4-41eb-af76-e4e6ce4974f5,,2026-10-25 13:41:35.807370+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+dad4b75f-68b9-463b-bd6d-cd69d3eca982,,2026-10-25 13:36:44.388341+00:00,agent_stop,info,{}
+dad4b75f-68b9-463b-bd6d-cd69d3eca982,,2026-10-25 13:34:52.726067+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+c9f42aed-4610-4561-bf8b-bd5362be3ebc,,2026-10-25 13:34:41.824871+00:00,agent_stop,info,{}
+c9f42aed-4610-4561-bf8b-bd5362be3ebc,,2026-10-25 13:18:30.601158+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": false}"
+511f6975-cce5-4f34-8ad4-159407601552,,2026-10-25 13:17:19.036381+00:00,agent_stop,info,{}
+511f6975-cce5-4f34-8ad4-159407601552,,2026-10-25 13:17:12.448197+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
+81c94128-b1d0-4f2d-937a-131110782934,,2026-10-25 13:17:12.139559+00:00,agent_stop,info,{}
+81c94128-b1d0-4f2d-937a-131110782934,,2026-10-25 13:16:48.104662+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
+ec0dd631-f209-4a5b-b39a-6d9cad92e1bf,,2026-10-25 13:15:16.662322+00:00,agent_stop,info,{}
+ec0dd631-f209-4a5b-b39a-6d9cad92e1bf,,2026-10-25 13:15:13.680690+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
+eb3f74ed-261a-438c-8c41-732818e0c821,,2026-10-25 13:02:46.627890+00:00,agent_stop,info,{}
+eb3f74ed-261a-438c-8c41-732818e0c821,142,2026-10-25 12:33:57.091649+00:00,hold,warning,"{""reason"": ""cluster read failed: 'sum by (service) (label_replace(rate(container_cpu_usage_seconds_total{namespace=\""default\"",pod!=\""\"",container=\""\""}[120s]), \""service\"", \""$1\"", \""pod\"", \""(.+)-[a-z0-9]+-[a-z0-9]+\""))': HTTPConnectionPool(host='localhost', port=9090): Max retries exceeded with url: /api/v1/query?query=sum+by+%28service%29+%28label_replace%28rate%28container_cpu_usage_seconds_total%7Bnamespace%3D%22default%22%2Cpod%21%3D%22%22%2Ccontainer%3D%22%22%7D%5B120s%5D%29%2C+%22service%22%2C+%22%241%22%2C+%22pod%22%2C+%22%28.%2B%29-%5Ba-z0-9%5D%2B-%5Ba-z0-9%5D%2B%22%29%29 (Caused by NewConnectionError(\""HTTPConnection(host='localhost', port=9090): Failed to establish a new connection: [Errno 61] Connection refused\""))"", ""metrics_age_s"": 108.3}"
+eb3f74ed-261a-438c-8c41-732818e0c821,141,2026-10-25 12:33:27.015908+00:00,hold,warning,"{""reason"": ""cluster read failed: 'sum by (service) (label_replace(rate(container_cpu_usage_seconds_total{namespace=\""default\"",pod!=\""\"",container=\""\""}[120s]), \""service\"", \""$1\"", \""pod\"", \""(.+)-[a-z0-9]+-[a-z0-9]+\""))': ('Connection aborted.', ConnectionResetError(54, 'Connection reset by peer'))"", ""metrics_age_s"": 78.3}"
+eb3f74ed-261a-438c-8c41-732818e0c821,140,2026-10-25 12:32:54.781158+00:00,hold,warning,"{""reason"": ""cluster read failed: 'sum by (service) (label_replace(rate(container_cpu_usage_seconds_total{namespace=\""default\"",pod!=\""\"",container=\""\""}[120s]), \""service\"", \""$1\"", \""pod\"", \""(.+)-[a-z0-9]+-[a-z0-9]+\""))': HTTPConnectionPool(host='localhost', port=9090): Read timed out. (read timeout=15.0)"", ""metrics_age_s"": 46.0}"
+eb3f74ed-261a-438c-8c41-732818e0c821,46,2026-10-25 11:43:11.145581+00:00,breaker_closed,info,"{""p95_ms"": 28.7, ""slo_ms"": 3000.0}"
+eb3f74ed-261a-438c-8c41-732818e0c821,34,2026-10-25 11:36:53.684981+00:00,breaker_open,warning,"{""p95_ms"": 5992.0, ""slo_ms"": 3000.0}"
+eb3f74ed-261a-438c-8c41-732818e0c821,28,2026-10-25 11:33:43.235509+00:00,breaker_closed,info,"{""p95_ms"": 2894.2, ""slo_ms"": 3000.0}"
+eb3f74ed-261a-438c-8c41-732818e0c821,27,2026-10-25 11:33:11.558745+00:00,breaker_open,warning,"{""p95_ms"": 5782.6, ""slo_ms"": 3000.0}"
+eb3f74ed-261a-438c-8c41-732818e0c821,,2026-10-25 11:18:50.721394+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
+c3b56bd5-319e-4c68-85a9-bc2feed54514,,2026-10-25 11:18:50.443900+00:00,agent_stop,info,{}
+c3b56bd5-319e-4c68-85a9-bc2feed54514,,2026-10-25 11:10:07.997803+00:00,agent_start,info,"{""mode"": ""live"", ""shadow"": true}"
 d0dbc6fe-480b-466a-bc31-7023f201cddb,,2026-10-25 07:53:57.080732+00:00,agent_stop,info,{}
 d0dbc6fe-480b-466a-bc31-7023f201cddb,10,2026-10-25 07:28:33.937777+00:00,breaker_closed,info,"{""p95_ms"": 270.3, ""slo_ms"": 3000.0}"
 d0dbc6fe-480b-466a-bc31-7023f201cddb,9,2026-10-25 07:28:02.496207+00:00,breaker_open,warning,"{""p95_ms"": 3074.9, ""slo_ms"": 3000.0}"

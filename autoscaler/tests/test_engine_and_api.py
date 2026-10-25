@@ -412,3 +412,16 @@ def test_page_script_escapes_payload_strings_it_puts_in_html():
     for needle in ("esc(short(n.id))", "esc(n.blocked_reason)", "<h3>${esc(n.id)}</h3>"):
         assert needle in src, needle
     assert "<em>${n.blocked_reason}</em>" not in src
+
+
+def test_live_no_scale_up_while_the_entry_service_has_no_traffic(live, monkeypatch):
+    """A starting JVM burns its whole CPU limit: with no traffic at the entry service the agent must not read that as demand."""
+    monkeypatch.setattr(config, "SCALE_UP_MIN_ENTRY_RPS", 0.5)
+    live._prom.set(rps=0.0, own=400.0, cpu=0.5)                 # CPU pegged at the limit, but nobody is calling
+    p = live.tick()
+    assert not p["stale"] and all(a["dr"] <= 0 for _, a in live._k8s.applied)
+    assert any("no traffic at the entry service" in (n["blocked_reason"] or "") for n in p["nodes"]), "the HPA rules would have added capacity: the rule must say why it did not"
+    live._prom.set(rps=60.0, own=400.0, cpu=0.5)                # now there is traffic: capacity may be added
+    live._k8s.applied.clear()
+    live.tick()
+    assert any(a["dr"] > 0 for _, a in live._k8s.applied)

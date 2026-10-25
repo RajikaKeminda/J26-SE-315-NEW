@@ -57,6 +57,20 @@ Normal request mix, 3 users, 26 minutes; the PC session ran the load and a watch
 Cost, from the load generator: 8330 calls, **243 failed (2.9 %)**, all inside the three restarts (order resize 104; the two `ts-order-other-service` restarts 139), none in the steady states between them.
 The two outages hit different call paths (order/refresh and travel failed in the first; orderOther/refresh, travel2 search and booking in the second). Node: MemAvailable never below 863 MiB, no pod restarted, no OOM.
 
+## 5b. The whole cycle on the real Train-Ticket, watched in the frontend (2026-10-25, the user's own launch command, only `ts-order-service` controlled)
+Staged at 300m, 1 pod; load 3 users, normal mix, then no load; agent acting, history in the database (run `f4d26994`-successor, see `results/dataset/live_history`). The page (Live tab) showed each step:
+
+| Time (UTC) | What happened | What the frontend showed |
+|---|---|---|
+| 13:47:48-13:49:20 | the pod had just started: it burnt 73-85 % of its 300m with **zero traffic** | decision feed empty; the agent vetoed every scale-up (`no_traffic`, then `no_demand`) |
+| 13:51:24 | the load arrived (utilisation 0.58) | feed: "resized ts-order cpu 0.3→1 · mem 800→800MiB" and "scaled up ts-order +1 pod"; topology header "33 services, 20 edges, 1 controlled"; p95 4.3 s during the restart |
+| 13:52:36-14:01:36 | measured load: 5.9 req/s, 3204 calls, 36 failed (all in the first 18 s: the tail of the restart) | stable at 2 pods, 1 core |
+| 14:01:36 | load ends | |
+| 14:05:37 | **3 min 50 s later the second pod is removed** (utilisation 0.01 for 6 steps: idle reclaim); the remaining pod was not restarted | feed: "scaled down ts-order -1 pod" |
+
+**A flaw found by this test and fixed:** the first attempt scaled up before any traffic, because a freshly started JVM uses all of its CPU limit for a minute or two and the CPU-only gate took that for demand
+(it had also happened in the first demo run). Rule added: no scale-up anywhere while the entry service gets less than 0.5 req/s (`SCALE_UP_MIN_ENTRY_RPS`); verified live in the second attempt (above).
+
 ## 6. Train-Ticket in the simulator
 `bottleneck_eval --topology trainticket-sim` (gate on): the bottleneck gets capacity in 2 steps for every model (100 %), nothing is wasted on idle services, but SLO recovery is slow for all of them
 (16-25 steps, 68-77 % violations) because a Java pod takes 95 s to start and the node allows 2 replicas. The Train-Ticket-specific bottleneck-aware model (`mo_td3_bn_tt`, score 0.499) is **not** better than the replica+CPU model (`mo_td3_trainticket_cpu`,
@@ -74,4 +88,4 @@ almost every path through order and order-other.
 * It is **one seed per model**; the simulator scenarios are mine and generous to the agent (the fix always exists, every other service stays below 70 % of its starting capacity).
 * Bottlenecks that are **not CPU** (a slow database, a lock) are invisible to it; the gate makes this explicit: no CPU demand, no capacity.
 * A CPU resize restarts the pod (about 65-120 s for this application): in this cluster, finding the bottleneck costs a short outage of that service.
-* The agent does not scale back down after the load ends in the Train-Ticket run (CPU shrinking is disabled by design there); the operator restores.
+* After the load ends the agent gives the extra **replica** back (idle reclaim, verified live) but not the CPU: shrinking a limit restarts the pod, so it is disabled in the Train-Ticket profile; the operator restores the 300m staging.
