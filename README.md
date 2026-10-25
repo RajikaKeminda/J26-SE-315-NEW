@@ -49,7 +49,7 @@ separate machine; the controller on a laptop reaches it over SSH tunnels). **Sta
 
 * **A model that scales replicas AND CPU, trained and run live with the data stored:** `mo_td3_trainticket_cpu` (fine-tuned from `mo_td3_large`, memory locked) raised the staged bottleneck `ts-order-service` from 1 pod / 300m to 2 pods / 1 core on the real cluster,
   the gateway p95 fell from about 3.3 s to 0.9 s, and the resize cost about 80 s of that service (2.0 % of calls failed). It keeps that service at maximum at any load (no scale-down), so it is not a load-following controller. Every step of the training
-  and of the live runs is in the database. Commands and numbers: [`docs/RUN_LOG_TRAINTICKET_CPU.md`](docs/RUN_LOG_TRAINTICKET_CPU.md); all other commands: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
+  and of the live runs is in the database. Commands and numbers: [`docs/RUN_LOG_TRAINTICKET_CPU.md`](docs/RUN_LOG_TRAINTICKET_CPU.md); all other commands: [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md); the demo script: [`docs/FULL_DEMO.md`](docs/FULL_DEMO.md).
 * **History in PostgreSQL (opt-in):** with `AUTOSCALER_DATABASE_URL` set (`bash scripts/22_db_up.sh`) the agent stores its actions (proposed / approved / applied, with the reason a
   scale-up was blocked), per-service metrics (24 h), the critical-path analysis, SLO-violation episodes and events (90 days), separately for every cluster it is plugged into; the control
   room has a History panel and `python -m src.persistence.export` writes CSVs. Writing never blocks or fails the control loop. See [`docs/PERSISTENCE.md`](docs/PERSISTENCE.md).
