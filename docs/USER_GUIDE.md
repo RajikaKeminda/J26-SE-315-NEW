@@ -503,6 +503,7 @@ Environment variables (`autoscaler/src/config.py`); the launcher scripts set mos
 | `ALLOW_RESIZE` | `1` (`0` in generated profiles) | allow CPU/memory changes (pod restarts) |
 | `SCALE_UP_MIN_UTIL`, `SCALE_DOWN_MAX_UTIL` | `0`, `1.01` (off; `0.5`, `0.5` in the Train-Ticket profile) | demand gate: capacity is added only to a service whose CPU utilisation is at least the first, removed only from one at most the second |
 | `ALLOW_CPU_DECREASE`, `MAX_RESIZES_PER_STEP` | `1`, `0` (no limit; `0` and `1` in the Train-Ticket profile) | never shrink a CPU limit; at most this many services resized per step (the busiest first) |
+| `IDLE_RECLAIM_STEPS`, `IDLE_RECLAIM_UTIL` | `0` (off; `6` in the Train-Ticket profile), `0.15` | a service idle (CPU below the second) for that many steps in a row gives one replica back (nothing restarts), once the cooldown and the 5-minute window after a scale-up have passed |
 | `ALLOW_MEMORY_RESIZE` | `1` | `0` = CPU may change but memory never does (in training and live) |
 | `NODE_MEMORY_RESERVE_MB` | 768 | memory the node must keep free after a scale-up |
 | `SCALE_DOWN_AFTER_UP_STEPS` | 0 | stabilisation window after a scale-up (10 in the Train-Ticket profile) |

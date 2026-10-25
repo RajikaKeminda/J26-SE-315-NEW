@@ -132,6 +132,8 @@ bash scripts/21_tt_demo_bottleneck.sh restore               # CPU limit back to 
 $K scale deploy ts-order-service --replicas=1
 $K get deploy ts-order-service -o jsonpath='{.spec.replicas} {.status.readyReplicas} {.spec.template.spec.containers[0].resources}{"\n"}'   # = the baseline of part 0
 ```
+**After the load ends** the agent gives the second pod back by itself (idle reclaim: utilisation below 15 % for 6 steps = 3 minutes, and at least 5 minutes after the last scale-up), but it does **not** shrink the CPU limit back (that restarts the pod, so it is switched off): the order service ends at 1 pod and 1 core, which is its normal baseline. The demo-app model (`mo_td3_bn`) also shrinks CPU by itself.
+
 **Say out loud what this does not prove:** the agent proposes the maximum for this service at *every* load and never scales down - it is not a load-following controller; only one service was controlled; the test account's order history keeps growing and slows
 `order/refresh` and `preserve` by itself, so absolute latencies drift between days.
 

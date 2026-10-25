@@ -122,7 +122,7 @@ class StepRecorder:
         cpu, mem = n.get("cpu"), n.get("mem")
         p_cpu, a_cpu = n.get("proposed_cpu", cpu), n.get("applied_cpu", cpu)
         p_mem, a_mem = n.get("proposed_mem", mem), n.get("applied_mem", mem)
-        proposal = bool(p_dr or p_cpu != cpu or p_mem != mem)
+        proposal = bool(p_dr or p_cpu != cpu or p_mem != mem or a_dr or a_cpu != cpu or a_mem != mem)       # a rule of the guard can act without a proposal (idle reclaim)
         reason = n.get("blocked_reason")
         if str(reason or "").startswith("HOLD"):
             return None

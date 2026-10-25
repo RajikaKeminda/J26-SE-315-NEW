@@ -63,6 +63,7 @@ class SafetyGuard:
     _last_scale_up_step: dict = field(default_factory=dict)
     _last_resize_step: dict = field(default_factory=dict)
     _undo: dict = field(default_factory=dict)         # {svc: (down, up, resize) timestamps before the last filter()}
+    _idle_streak: dict = field(default_factory=dict)  # {svc: consecutive steps with utilisation below IDLE_RECLAIM_UTIL}
     _consecutive_violations: int = 0
     _breaker_open: bool = False
     _breaker_opened_at_step: int = -1
@@ -138,6 +139,13 @@ class SafetyGuard:
                 if not config.ALLOW_CPU_DECREASE and a["cpu"] < cur["cpu"] - 1e-9:
                     notes.append("cpu decrease disabled (ALLOW_CPU_DECREASE=0)")
                     a["cpu"] = cur["cpu"]
+
+                # 2c. idle reclaim: a service that has been idle for a while gives a replica back (restarts nothing) -----
+                streak = self._idle_streak[svc] = (self._idle_streak.get(svc, 0) + 1) if cur.get("utilization", 1.0) < config.IDLE_RECLAIM_UTIL else 0
+                if (config.IDLE_RECLAIM_STEPS > 0 and streak >= config.IDLE_RECLAIM_STEPS and a["dr"] >= 0
+                        and cur["replicas"] > self.min_replicas):
+                    notes.append(f"idle reclaim: utilisation below {config.IDLE_RECLAIM_UTIL:.2f} for {streak} steps")
+                    a["dr"] = -1
 
                 # 3. asymmetric scale-down --------------------------------------
                 if a["dr"] < 0:
@@ -260,6 +268,7 @@ class SafetyGuard:
 
     def reset(self):
         self._undo = {}
+        self._idle_streak.clear()
         self._last_scale_down_step.clear()
         self._last_scale_up_step.clear()
         self._last_resize_step.clear()

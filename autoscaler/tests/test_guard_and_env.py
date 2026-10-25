@@ -336,3 +336,28 @@ def test_a_resize_that_restarts_pods_is_limited_to_one_service_per_step_and_neve
     changed = [s for s in cur if one[s]["cpu"] != 0.1]
     assert changed == ["b"], "only the busiest service is resized"
     assert all("resize limit" in reasons[s] for s in ("a", "c"))
+
+
+def test_idle_reclaim_gives_a_replica_back_after_a_service_has_been_idle_for_a_while(monkeypatch):
+    from src import config
+    from src.safety.guards import SafetyGuard
+    monkeypatch.setattr(config, "IDLE_RECLAIM_STEPS", 3)
+    monkeypatch.setattr(config, "IDLE_RECLAIM_UTIL", 0.15)
+    monkeypatch.setattr(config, "SCALE_UP_MIN_UTIL", 0.5)             # as in the Train-Ticket profile: an idle service is not given more either
+    g = SafetyGuard(services=["s"], budget=float("inf"), min_replicas=1)
+
+    def cur(util, replicas=2):
+        return {"s": {"replicas": replicas, "cpu": 1.0, "mem": 200.0, "utilization": util, "mem_utilization": 0.3, "ready_replicas": replicas}}
+    hold = {"s": {"dr": 0, "cpu": 1.0, "mem": 200.0}}
+    up = {"s": {"dr": 3, "cpu": 1.0, "mem": 200.0}}
+    assert [g.filter(up if i % 2 else hold, cur(0.05), step=100 + i)[0]["s"]["dr"] for i in range(2)] == [0, 0], "not idle long enough yet (even if the model asks for more)"
+    approved, reasons = g.filter(hold, cur(0.05), step=102)
+    assert approved["s"]["dr"] == -1 and "idle reclaim" in reasons["s"]
+    busy, _ = g.filter(hold, cur(0.6), step=110)
+    assert busy["s"]["dr"] == 0, "a busy step resets the streak"
+    for i in range(3):
+        last, _ = g.filter(hold, cur(0.05, replicas=1), step=120 + i)
+    assert last["s"]["dr"] == 0, "never below the minimum number of replicas"
+    monkeypatch.setattr(config, "IDLE_RECLAIM_STEPS", 0)
+    g2 = SafetyGuard(services=["s"], budget=float("inf"))
+    assert all(g2.filter(hold, cur(0.0), step=200 + i)[0]["s"]["dr"] == 0 for i in range(10)), "off by default"
