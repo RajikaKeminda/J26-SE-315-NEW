@@ -53,8 +53,9 @@ def decode_action(services, metrics, idx, cont, replica_only=False):
         if not replica_only:
             cpu = quantize(u_to_resource(cont[i][0], config.CPU_MIN, config.CPU_MAX),
                            config.CPU_QUANTUM, config.CPU_MIN, config.CPU_MAX)
-            mem = quantize(u_to_resource(cont[i][1], config.MEM_MIN_MB, config.MEM_MAX_MB),
-                           config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
+            if config.ALLOW_MEMORY_RESIZE:
+                mem = quantize(u_to_resource(cont[i][1], config.MEM_MIN_MB, config.MEM_MAX_MB),
+                               config.MEM_QUANTUM_MB, config.MEM_MIN_MB, config.MEM_MAX_MB)
         proposals[s] = {"dr": dr, "cpu": cpu, "mem": mem}
     return proposals
 
@@ -78,7 +79,7 @@ def topology_base_rps(topology: Topology) -> float:
     """Base external load, scaled so every topology presents the same relative
     pressure on its own budget (identical to config.BASE_RPS for the 6-service app)."""
     return (config.BASE_RPS * (budget_for(topology) / budget_for(DEMO6))
-            * (_cpu_per_request(DEMO6) / _cpu_per_request(topology)))
+            * (_cpu_per_request(DEMO6) / _cpu_per_request(topology)) * getattr(topology, "load_scale", 1.0))
 
 
 def _cpu_per_request(t: Topology) -> float:
@@ -124,6 +125,8 @@ class AutoscalerEnv:
         self.sim = Simulator(topo, rng=self.rng, obs_noise=self.obs_noise)
         if initial:
             self.sim.reset(**initial)
+        elif getattr(topo, "initial_cpu", None):                 # a bottleneck scenario: the named service starts with a small limit
+            self.sim.reset(cpu={s2: topo.initial_cpu.get(s2, config.CPU_DEFAULT) for s2 in self.services})
         elif self.randomize_initial and self.rng.random() < 0.7:
             # Real clusters are not uniform (one service has a tight limit, another a generous one): a policy that has only
             # ever seen identical limits cannot be expected to cope. Levels span the allowed CPU range.

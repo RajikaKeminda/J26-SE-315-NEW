@@ -1,0 +1,67 @@
+{
+ "topology": "trainticket-sim",
+ "bottleneck_services": [
+  "ts-basic-service",
+  "ts-contacts-service",
+  "ts-order-service",
+  "ts-preserve-service",
+  "ts-route-service",
+  "ts-seat-service",
+  "ts-security-service",
+  "ts-station-service",
+  "ts-train-service",
+  "ts-travel-service"
+ ],
+ "episodes_per_service": 4,
+ "demand_cores": 1.2,
+ "random_focus_baseline": 0.1,
+ "regime": {
+  "STEP_SECONDS": 30.0,
+  "POD_STARTUP_SECONDS": 95.0,
+  "CPU_MAX": 1.0,
+  "MAX_REPLICAS": 2,
+  "ALLOW_MEMORY_RESIZE": false
+ },
+ "controllers": {
+  "hpa (tuned)": {
+   "focus": 0.1,
+   "episodes_with_no_added_capacity": 0,
+   "violations": 0.6925000000000001,
+   "p95": 1104.2019910783586,
+   "cost": 13.21875,
+   "score": 0.5371548657182363
+  },
+  "cpu": {
+   "focus": 0.16749999999999998,
+   "episodes_with_no_added_capacity": 0,
+   "violations": 0.7212500000000001,
+   "p95": 1095.1638387241112,
+   "cost": 10.004318359375,
+   "score": 0.45785161065410146
+  },
+  "cap6": {
+   "focus": 0.10526315789473684,
+   "episodes_with_no_added_capacity": 2,
+   "violations": 0.796875,
+   "p95": 1498.2350166941112,
+   "cost": 13.059023437499999,
+   "score": 0.5647750696289302
+  },
+  "large": {
+   "focus": 0.17456140350877195,
+   "episodes_with_no_added_capacity": 2,
+   "violations": 0.8725000000000002,
+   "p95": 1575.5510985204025,
+   "cost": 10.868327148437498,
+   "score": 0.5219674834618541
+  },
+  "hot": {
+   "focus": 0.09909992784992785,
+   "episodes_with_no_added_capacity": 0,
+   "violations": 0.9012499999999999,
+   "p95": 3733.091161396938,
+   "cost": 8.973001953125001,
+   "score": 0.562371508395527
+  }
+ }
+}

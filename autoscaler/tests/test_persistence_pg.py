@@ -5,6 +5,7 @@
 
 Each test works in its own schema (search_path), dropped afterwards, so nothing else in that database is touched."""
 
+import json
 import os
 import time
 import uuid
@@ -70,13 +71,14 @@ def test_schema_migrates_twice_and_every_fact_table_has_cluster_and_run(connect)
     tables = {r[0] for r in conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()")}
     assert {"clusters", "runs", "steps", "service_metrics", "actions", "critical_paths", "topology_snapshots", "violations", "events",
             "frames", "schema_version"} <= tables
-    for t in tables - {"clusters", "schema_version"}:
+    assert {"training_inputs", "training_runs", "training_curve", "training_episodes", "training_trajectories"} <= tables
+    for t in tables - {"clusters", "schema_version"} - {t for t in tables if t.startswith("training_")}:      # training data is not per cluster history
         cols = {r[0] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() "
                                            "AND table_name = %s", (t,))}
         assert "cluster_id" in cols, f"{t} has no cluster_id"
         if t != "runs":
             assert "run_id" in cols, f"{t} has no run_id"
-    assert [r[0] for r in conn.execute("SELECT version FROM schema_version")] == [1]
+    assert [r[0] for r in conn.execute("SELECT version FROM schema_version ORDER BY version")] == [1, 2]
 
 
 def test_live_ticks_are_stored_in_every_table_and_can_be_read_back(connect, live_engine):
@@ -355,3 +357,103 @@ def test_real_train_ticket_traces_end_up_as_stored_critical_path_analysis(connec
     steps = queries.steps(c, cid)
     assert len(steps) == 3 and all(s["shadow"] for s in steps)
     assert {m["service"] for m in queries.metrics(c, cid)} == set(e.services)
+
+
+# ---------------------------------------------------------------------------------------------- training data
+def test_a_training_run_is_stored_with_its_inputs_episodes_and_curve(connect, monkeypatch, tmp_path):
+    import numpy as np
+    from src import config
+    from src.persistence import training
+    from src.rl_agent.env import AutoscalerEnv
+    from src.rl_agent.trainer import run_collect
+    from src.topologies import TRAINTICKET_SIM
+    from src.rl_agent.env import decode_action
+    monkeypatch.setattr(config, "SIM_PARAMS_PATH", os.path.join(os.path.dirname(config.SIM_PARAMS_PATH), "sim_params_trainticket.json"))
+    schema = connect().execute("SHOW search_path").fetchone()[0].split(",")[0].strip().strip('"')
+    sep = "&" if "?" in URL else "?"
+    url = f"{URL}{sep}options=-csearch_path%3D{schema}"
+    from src.persistence import db as _db
+    _c = _db.connect(url)
+    _db.migrate(_c)
+    _cid = _db.register_cluster(_c, "train-ticket", "default")
+    training.add_input(_c, "traces", "real traces", [{"traceID": "t1"}], _cid)          # as `training register` would have stored them
+    _c.commit()
+    _c.close()
+    rec = training.TrainingRecorder(url, "mo_td3_full", 1, 6, "models/mo_td3_large.pt", {"actor_lr": 5e-5}, {"sizes": [4, 14]},
+                                    cluster_name="train-ticket", trajectory_every=2, note="unit test", target_topologies=[TRAINTICKET_SIM])
+    assert not rec.disabled and rec.run_id
+    env = AutoscalerEnv(topology=None, seed=1)
+    w = np.array([0.5, 0.35, 0.15], dtype=np.float32)
+    for ep in range(6):
+        obs_l, idx_l, cont_l, rew = run_collect(env, lambda o, e: decode_action(e.services, o["metrics"], *_noop(e, o)),
+                                                topology=TRAINTICKET_SIM if ep % 2 == 0 else None)
+        rec.on_episode(ep, env, w, obs_l, idx_l, cont_l, rew)
+    rec.on_validation({"episode": 6, "val_scalarized": 0.3, "val_p95_ms": 400.0, "val_cost": 9.0, "val_slo_violation": 0.1, "seconds": 3.0, "critic_loss": 0.5})
+    ckpt = tmp_path / "m.pt"
+    ckpt.write_bytes(b"model")
+    rec.finish(str(ckpt), {"best_val_scalarized": 0.3, "selected_fresh_val_scalarized": 0.31})
+
+    c = reader(connect)
+    run = c.execute("SELECT status, checkpoint_sha256, best_val, array_length(input_ids, 1), source_cluster_id IS NOT NULL, git_sha FROM training_runs").fetchone()
+    assert run[0] == "finished" and run[1] == training.file_sha256(str(ckpt)) and run[2] == 0.3 and run[3] == 4 and run[4]
+    assert c.execute("SELECT count(*) FROM training_episodes").fetchone()[0] == 6
+    assert c.execute("SELECT count(*) FROM training_trajectories").fetchone()[0] == 3                       # every 2nd episode
+    kinds = {r[0] for r in c.execute("SELECT kind FROM training_inputs")}
+    assert kinds == {"traces", "regime", "sim_params", "topology"}
+    row = c.execute("SELECT topology, steps FROM training_trajectories WHERE topology = 'trainticket-sim' LIMIT 1").fetchone()
+    assert row and len(row[1]) == config.EPISODE_LENGTH_STEPS and "ts-order-service" in row[1][0]["services"]
+    assert set(row[1][0]["services"]["ts-order-service"]) >= {"replicas", "cpu", "mem", "util", "p95_ms", "delta"}
+    ep = c.execute("SELECT mean_p95_ms, steps, preference, mean_penalty FROM training_episodes WHERE episode = 1").fetchone()
+    assert ep[1] == config.EPISODE_LENGTH_STEPS and len(ep[2]) == 3 and len(ep[3]) == 3
+    # the dataset can be attached to, summarised and exported
+    ev = tmp_path / "eval.json"
+    ev.write_text(json.dumps({"controllers": {"a": 1}}))
+    monkeypatch.setattr(config, "DATABASE_URL", url)
+    run_id = str(c.execute("SELECT id FROM training_runs").fetchone()[0])
+    training.main(["attach", "--run", run_id, "--file", str(ev), "--name", "sim comparison"])
+    training.main(["summary"])
+    out = tmp_path / "dataset"
+    training.main(["export", "--run", run_id, "--out", str(out)])
+    files = {f.name for f in out.iterdir()}
+    assert {"training_runs.csv", "training_curve.csv", "training_episodes.csv", "training_trajectories.jsonl"} <= files
+    assert sum(1 for f in files if f.startswith("input_")) == 5, files               # traces, regime, sim_params, topology + the attached evaluation
+    assert len((out / "training_episodes.csv").read_text().splitlines()) == 7        # header + 6 episodes
+    # the same inputs registered again are not duplicated
+    rec2 = training.TrainingRecorder(url, "mo_td3_full", 2, 1, cluster_name="train-ticket", target_topologies=[TRAINTICKET_SIM])
+    assert c.execute("SELECT count(*) FROM training_inputs").fetchone()[0] == 5 and rec2.run_id        # 4 + the attached evaluation, none duplicated
+
+
+def _noop(env, obs):
+    import numpy as np
+    n = len(env.services)
+    return np.full(n, 3, dtype=np.int64), np.zeros((n, 2), dtype=np.float32)       # index 3 = no replica change
+
+
+def test_a_database_failure_never_stops_training(monkeypatch):
+    from src.persistence import training
+    rec = training.TrainingRecorder("postgresql://nobody:x@127.0.0.1:1/none", "mo_td3_full", 1, 1)
+    assert rec.disabled
+    rec.on_episode(0, None, None, [], [], [], [])        # must not raise
+    rec.on_validation({"episode": 1, "val_scalarized": 0, "val_p95_ms": 0, "val_cost": 0, "val_slo_violation": 0})
+    rec.finish()
+
+
+def test_history_actions_can_be_limited_to_real_changes(connect, api):
+    """changed_only returns an action only if a replica count or a CPU limit really changed (the CPU before comes from that step's service metrics)."""
+    w = make_writer(connect, "cluster-c")
+    sink = PostgresSink(w, rows.StepRecorder("dfs", 1))
+    assert w.wait_ready()
+    p = _payload(step=0, ts=time.time())
+    _node(p).update(proposed_cpu=1.0, applied_cpu=1.0, cpu=0.3)                       # a CPU raise: 0.3 -> 1.0
+    sink.record_step(p)
+    q = _payload(step=1, ts=time.time())
+    _node(q).update(proposed_delta=1, applied_delta=0, blocked_reason="scale-up blocked: no demand (utilisation 0.02 < 0.50)")      # blocked: no change
+    sink.record_step(q)
+    sh = _payload(step=2, ts=time.time(), shadow=True)
+    _node(sh).update(proposed_delta=2, applied_delta=1)                              # a SHADOW decision: nothing happened in the cluster
+    sink.record_step(sh)
+    sink.close()
+    every = api.get("/api/history/actions", params={"cluster": "cluster-c"}).json()["data"]
+    changed = api.get("/api/history/actions", params={"cluster": "cluster-c", "changed_only": "true"}).json()["data"]
+    assert len(every) == 3 and len(changed) == 1, "a shadow decision is not a change"
+    assert changed[0]["step"] == 0 and changed[0]["cpu_before"] == 0.3 and changed[0]["applied_cpu"] == 1.0

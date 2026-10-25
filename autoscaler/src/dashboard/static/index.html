@@ -283,6 +283,7 @@ tr:last-child td{border-bottom:none}
 
 <div class="card" id="histCard" style="margin-bottom:14px">
   <h2>History <span class="sel-inline"><select class="btn" id="histCluster" aria-label="cluster"></select>
+    <select class="btn" id="histWhat" aria-label="which decisions"><option value="changes" selected>changes only</option><option value="all">all decisions</option></select>
     <select class="btn" id="histHours" aria-label="period"><option value="1">1 h</option><option value="6">6 h</option><option value="24" selected>24 h</option><option value="168">7 d</option><option value="2160">90 d</option></select></span></h2>
   <div class="sub" id="histSub">What the agent saw and did, stored per cluster in PostgreSQL.</div>
   <div id="histBody" class="empty">history is off — set AUTOSCALER_DATABASE_URL (docs/PERSISTENCE.md)</div>
@@ -861,10 +862,10 @@ async function drawHistory(){
     cl.innerHTML=c.clusters.map(x=>`<option value="${esc(x.id)}" ${x.id===keep?'selected':''}>${esc(x.name)} · ${esc(x.namespace)}${x.id===c.current?' (live)':''}</option>`).join('');
     const q=`cluster=${encodeURIComponent(cl.value)}&hours=${hrs}`;
     const get=(w,extra='')=>jget(`/api/history/${w}?${q}${extra}`);
-    const [steps,viol,acts,cps,sum,ev]=await Promise.all([get('steps','&limit=4000'),get('violations'),get('actions','&limit=400'),
+    const [steps,viol,acts,cps,sum,ev]=await Promise.all([get('steps','&limit=4000'),get('violations'),get('actions',($('histWhat').value==='changes'?'&changed_only=true':'')+'&limit=400'),
       get('critical-path','&changed_only=true&limit=12'),get('summary'),get('events','&limit=12')]);
     const S=sum.data, ord=steps.data;
-    const replicaActs=acts.data.filter(a=>a.proposed_dr!==0||a.applied_dr!==0||a.outcome==='k8s_error'), hidden=acts.data.length-replicaActs.length;
+    const replicaActs=acts.data;
     body.className='';
     const oc=Object.entries(S.actions_by_outcome||{}).map(([k,v])=>`${esc(k)} ${v}`).join(' · ')||'none';
     const rs=Object.entries(S.reasons||{}).slice(0,6).map(([k,v])=>`${esc(k)} ${v}`).join(' · ')||'none';
@@ -882,11 +883,11 @@ async function drawHistory(){
           <div class="small" style="margin:10px 0 6px">Events</div>${ev.data.slice(0,5).map(e=>
           `<div class="small" style="margin:0 0 3px">${new Date(e.ts).toLocaleTimeString()} · ${esc(e.type)}</div>`).join('')}</div>
       </div>
-      <table style="margin-top:12px"><thead><tr><th>time</th><th>service</th><th>proposed</th><th>applied</th><th>outcome</th><th>why</th></tr></thead><tbody>${
+      <table style="margin-top:12px"><thead><tr><th>time</th><th>service</th><th>proposed</th><th>applied</th><th>CPU</th><th>outcome</th><th>why</th></tr></thead><tbody>${
         replicaActs.slice(0,15).map(a=>`<tr><td>${new Date(a.ts).toLocaleTimeString()}</td><td>${esc(a.service)}</td><td>${a.proposed_dr>0?'+':''}${a.proposed_dr}</td>
-        <td>${a.applied_dr>0?'+':''}${a.applied_dr}${a.shadow?' <span class="tag">shadow</span>':''}</td><td>${esc(a.outcome)}</td><td>${esc((a.reason_codes||[]).join(', '))}</td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">no replica changes in this period</div></td></tr>'}</tbody></table>
-      <div class="small">${hidden?hidden+' resize-only or blocked-without-change rows not shown (all are stored: /api/history/actions)':''}</div>`;
-    cl.onchange=()=>drawHistory(); $('histHours').onchange=()=>drawHistory();
+        <td>${a.applied_dr>0?'+':''}${a.applied_dr}${a.shadow?' <span class="tag">shadow</span>':''}</td><td>${a.cpu_before!=null&&Math.abs(a.applied_cpu-a.cpu_before)>0.0001?`${(+a.cpu_before).toFixed(2)} → ${(+a.applied_cpu).toFixed(2)}`:(a.applied_cpu!=null?(+a.applied_cpu).toFixed(2):'–')}</td><td>${esc(a.outcome)}</td><td>${esc((a.reason_codes||[]).join(', '))}</td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">no actions of this kind in this period</div></td></tr>'}</tbody></table>
+      <div class="small">${$('histWhat').value==='changes'?'only changes that really happened (a replica count or a CPU limit) are shown; switch to "all decisions" for the blocked ones and the shadow decisions':'all decisions, including the ones the safety layer blocked'}</div>`;
+    cl.onchange=()=>drawHistory(); $('histHours').onchange=()=>drawHistory(); $('histWhat').onchange=()=>drawHistory();
   }catch(e){
     body.className='empty'; body.textContent='history is off or unreachable — set AUTOSCALER_DATABASE_URL and start the database (scripts/22_db_up.sh)';
   }
