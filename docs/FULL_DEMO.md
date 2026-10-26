@@ -49,7 +49,7 @@ bash scripts/10_run_dashboard.sh            # http://localhost:8080 (stop it wit
 * **Live tab:** the dependency graph (scroll to zoom, drag to move), the red chain is the critical path, the decision feed shows every action *and every blocked action with the reason*.
 * Drag the **SLO** slider to 100 and the others to 0: the same network adds capacity. Drag **cost** up: it saves money. "One network, any trade-off."
 * Switch the controller MO-TD3 -> HPA -> static during the burst scenario: the baselines' p95 climbs.
-* **Analysis tab:** controller comparison, cost-versus-latency Pareto front, simulator calibration (capacity within 3 % of a real pod), training curves.
+* **Analysis tab:** controller comparison, simulator calibration (capacity within 3 % of a real pod). The cost-versus-latency Pareto front, the training curves, the "how to read this" box and the CRISP-style critical shares are hidden for now; add `?all=1` to the URL (`http://localhost:8080/?all=1`) to show them.
 
 ## Part 3 - the models and the training data (6 min)
 ```bash

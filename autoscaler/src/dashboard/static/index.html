@@ -137,6 +137,10 @@ h1 span{color:var(--dim);font-weight:400}
 .ev .t{color:var(--dimmer);font-size:9.5px;min-width:30px}
 .ev .b{flex:1;color:var(--ink)}
 .ev .b em{font-style:normal;color:var(--dim)}
+/* sections kept in the page but hidden for now (research material, not part of the live story): add ?all=1 to the URL to show them */
+.tmp{display:none}
+body.show-tmp .tmp{display:block}
+body:not(.show-tmp) .grid.one-when-hidden{grid-template-columns:1fr !important}
 .empty{color:var(--dimmer);font-family:var(--mono);font-size:11px;text-align:center;padding:26px}
 
 /* ---------- table ---------- */
@@ -278,7 +282,7 @@ tr:last-child td{border-bottom:none}
     </div>
     <div id="evBars"></div>
   </div>
-  <div id="evProfile" style="margin-top:16px"></div>
+  <div id="evProfile" class="tmp" style="margin-top:16px"></div>
 </div>
 
 <div class="card" id="histCard" style="margin-bottom:14px">
@@ -326,13 +330,13 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
-<div class="grid" style="grid-template-columns:1.55fr 1fr">
+<div class="grid one-when-hidden" style="grid-template-columns:1.55fr 1fr">
   <div class="card">
     <h2>Controller comparison &amp; ablation <span class="sel-inline"><select class="btn" id="selTopo" aria-label="topology"></select></span></h2>
     <div class="sub">Every controller on identical traffic and noise. Lower is better; best per column in green.</div>
     <div id="ablation" class="empty">no results yet — run scripts/09_run_ablation.sh</div>
   </div>
-  <div class="card">
+  <div class="card tmp">
     <h2>Cost vs. latency trade-off</h2>
     <div class="sub">One MO-TD3 network swept over preferences vs. the HPA tuning sweep. Ringed points are Pareto-optimal.</div>
     <svg id="pareto" viewBox="0 0 420 210" preserveAspectRatio="xMidYMid meet"><text class="axis" x="210" y="105" text-anchor="middle">no sweep yet — run scripts/12_run_pareto.sh</text></svg>
@@ -345,7 +349,7 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
-<div class="grid" style="grid-template-columns:1fr 1fr">
+<div class="grid tmp" style="grid-template-columns:1fr 1fr">
   <div class="card">
     <h2>Training convergence</h2>
     <div class="sub">Validation score (preference-weighted penalty, lower is better) during training.</div>
@@ -966,7 +970,8 @@ function connect(){
   ws.onclose=()=>{const p=$('livePill'); p.className='pill alert'; p.textContent='disconnected — retrying'; setTimeout(connect,2500);};
   ws.onopen=()=>{const p=$('livePill'); p.className='pill on'; p.innerHTML='<span class="dot"></span>live';};
 }
-initGraphControls(); initTabs(); initControls().then(loadStatic); connect();
+initGraphControls(); initTabs(); if(new URLSearchParams(location.search).has('all')) document.body.classList.add('show-tmp');
+initControls().then(loadStatic); connect();
 </script>
 </body>
 </html>

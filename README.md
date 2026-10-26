@@ -405,7 +405,7 @@ Open **http://localhost:8080**. It has two tabs under the status header. **Live*
 a decision feed that shows every scale/resize *and every action the safety layer blocked, with the reason*; per-service
 pods / CPU / memory / utilisation; **preference sliders that re-steer the trained network at run time** (SLO ↔ cost ↔
 balance); a controller switch (MO-TD3 / HPA / VPA / threshold / static) to watch the baselines handle the same traffic;
-the comparison, Pareto, calibration and training-convergence panels.
+the comparison and calibration panels (the Pareto, training-convergence, "how to read this" and CRISP-shares sections are hidden by default; `?all=1` in the URL shows them).
 
 ---
 
