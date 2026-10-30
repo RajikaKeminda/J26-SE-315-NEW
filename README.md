@@ -12,7 +12,7 @@ that is *fitted to measurements from a real cluster* and validated back against 
 This repository implements the four sub-components of the Topic Assessment Form
 (environment modelling → topology feature extraction → multi-objective DRL agent → reward
 engineering & evaluation). [`docs/TAF_TRACEABILITY.md`](docs/TAF_TRACEABILITY.md) maps every
-requirement of the form to code, tests and status
+requirement of the form to code, tests and status.
 
 ```
  Prometheus ─┐                      ┌── SDG (call frequency)  ─► GCN ─┐
